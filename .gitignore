@@ -1,0 +1,112 @@
+# =============================================================================
+# cbrmedia — единый .gitignore для всего monorepo
+#   1. Общие правила (ОС, редакторы, логи, секреты) — действуют везде
+#   2. apps/ios         — Xcode / Swift
+#   3. services/        — общие правила Go
+#   4. services/cbrservice — специфичное для cbrservice
+# =============================================================================
+
+# --- 1. Общие ------------------------------------------------------------------
+
+# ОС
+.DS_Store
+Thumbs.db
+
+# IDE / редакторы
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+*~
+
+# Логи и временные файлы
+*.log
+*.tmp
+*.temp
+*.cache
+*.bak
+
+# Секреты и окружение
+.env
+*.env
+
+# --- 2. iOS (apps/ios) ----------------------------------------------------------
+
+# Пользовательские настройки Xcode
+apps/ios/**/xcuserdata/
+apps/ios/**/*.xcscmblueprint
+apps/ios/**/*.xccheckout
+
+# Артефакты сборки
+apps/ios/**/build/
+apps/ios/**/DerivedData/
+apps/ios/**/*.moved-aside
+apps/ios/**/*.pbxuser
+!apps/ios/**/default.pbxuser
+apps/ios/**/*.mode1v3
+!apps/ios/**/default.mode1v3
+apps/ios/**/*.mode2v3
+!apps/ios/**/default.mode2v3
+apps/ios/**/*.perspectivev3
+!apps/ios/**/default.perspectivev3
+apps/ios/**/*.hmap
+
+# Упаковка приложения
+apps/ios/**/*.ipa
+apps/ios/**/*.dSYM.zip
+apps/ios/**/*.dSYM
+
+# Playgrounds
+apps/ios/**/timeline.xctimeline
+apps/ios/**/playground.xcworkspace
+
+# Swift Package Manager / Carthage / Accio
+apps/ios/**/.build/
+apps/ios/Carthage/Build/
+apps/ios/**/Dependencies/
+apps/ios/**/.accio/
+
+# fastlane
+apps/ios/fastlane/report.xml
+apps/ios/fastlane/Preview.html
+apps/ios/fastlane/screenshots/**/*.png
+apps/ios/fastlane/test_output
+
+# Code Injection
+apps/ios/**/iOSInjectionProject/
+
+# --- 3. Go (services/*) ---------------------------------------------------------
+
+# Бинарники, библиотеки, тесты
+services/**/*.exe
+services/**/*.exe~
+services/**/*.dll
+services/**/*.so
+services/**/*.dylib
+services/**/*.test
+services/**/*.out
+
+# Локальные базы данных
+services/**/*.db
+
+# Сборка и зависимости
+services/**/bin/
+services/**/build/
+services/**/dist/
+services/**/vendor/
+services/**/go.work
+services/**/go.work.sum
+
+# --- 4. services/cbrservice -----------------------------------------------------
+
+# Бинарник
+services/cbrservice/cbrservice
+
+# Тестовые артефакты (данные сервиса живут вне репозитория, в ~/.cbr)
+services/cbrservice/testdata/output/
+
+# Секреты (config.json содержит токен Telegram-бота)
+services/cbrservice/**/config.json
+services/cbrservice/**/secret.json
+services/cbrservice/**/.token

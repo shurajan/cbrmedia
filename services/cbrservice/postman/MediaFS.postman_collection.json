@@ -1,0 +1,216 @@
+{
+  "info": {
+    "name": "MediaFS",
+    "_postman_id": "mediafs-collection-uuid",
+    "description": "Postman collection for testing MediaFS HLS API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"password\": \"your_password_here\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:8000/auth",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8000",
+          "path": ["auth"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const res = pm.response.json();",
+              "if (res.token) {",
+              "  pm.collectionVariables.set(\"mediafs_token\", res.token);",
+              "  console.log(\"✅ Token saved to mediafs_token\");",
+              "} else {",
+              "  console.error(\"❌ No token received\");",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "List Videos",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{mediafs_token}}" }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/videos",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8000",
+          "path": ["videos"]
+        }
+      }
+    },
+    {
+      "name": "Get Playlist (.m3u8)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{mediafs_token}}" }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/videos/{{filename}}/playlist.m3u8",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8000",
+          "path": ["videos", "{{filename}}", "playlist.m3u8"]
+        }
+      }
+    },
+    {
+      "name": "Get Segment (.ts)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{mediafs_token}}" }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/videos/{{filename}}/{{segment}}",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8000",
+          "path": ["videos", "{{filename}}", "{{segment}}"]
+        }
+      }
+    },
+    {
+      "name": "Get Keyframe",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{mediafs_token}}" }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/videos/{{filename}}/keyframes/{{keyframe}}",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8000",
+          "path": ["videos", "{{filename}}", "keyframes", "{{keyframe}}"]
+        }
+      }
+    },
+    {
+      "name": "Get Sprite Image (.jpg)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{mediafs_token}}" }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/videos/{{filename}}/sprites/sprite_0.jpg",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8000",
+          "path": ["videos", "{{filename}}", "sprites", "sprite_0.jpg"]
+        }
+      }
+    },
+    {
+      "name": "Get Sprite VTT (.vtt)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{mediafs_token}}" }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/videos/{{filename}}/sprites/thumbnails.vtt",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8000",
+          "path": ["videos", "{{filename}}", "sprites", "thumbnails.vtt"]
+        }
+      }
+    },
+    {
+      "name": "Get Preview MP4",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{mediafs_token}}" }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/videos/{{filename}}/preview.mp4",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8000",
+          "path": ["videos", "{{filename}}", "preview.mp4"]
+        }
+      }
+    },
+    {
+      "name": "Delete Video",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{mediafs_token}}" }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/videos/{{filename}}",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8000",
+          "path": ["videos", "{{filename}}"]
+        }
+      }
+    },
+    {
+      "name": "Cut Clip",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{mediafs_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"from\": 5,\n  \"to\": 10,\n  \"name\": \"cut_demo\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:8000/cut/{{filename}}",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "8000",
+          "path": ["cut", "{{filename}}"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const res = pm.response.json();",
+              "if (res.file) {",
+              "  console.log(`🎬 Cut created: ${res.file}`);",
+              "} else {",
+              "  console.error(\"❌ Failed to create cut\");",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "mediafs_token", "value": "", "type": "string" },
+    { "key": "filename", "value": "your_video_folder_name", "type": "string" },
+    { "key": "segment", "value": "0.ts", "type": "string" },
+    { "key": "keyframe", "value": "segment_0000.jpg", "type": "string" }
+  ]
+}

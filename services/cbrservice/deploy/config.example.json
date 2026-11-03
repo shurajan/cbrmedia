@@ -1,0 +1,17 @@
+{
+  "base_url": "https://example.com/api/streamcontext",
+  "storage": {
+    "db": "data.db"
+  },
+  "url_poller": {
+    "proxy": ""
+  },
+  "telegram": {
+    "bot_token": "<your-bot-token>",
+    "allowed_user_id": 123456789,
+    "proxy": ""
+  },
+  "http": {
+    "addr": ":8000"
+  }
+}
