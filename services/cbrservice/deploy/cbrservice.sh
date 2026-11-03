@@ -10,6 +10,9 @@ CBR_HOME="${CBR_HOME:-$HOME/.cbr}"
 BIN="$CBR_HOME/bin/cbrservice"
 SERVICE_NAME="cbrservice.service"
 SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME"
+# Пользователь службы. Не $USER: он не задан при запуске из cron/CI/docker exec,
+# и пустой User= молча запустил бы службу от root.
+RUN_USER="$(id -un)"
 LOGROTATE_FILE="/etc/logrotate.d/cbrservice"
 
 echo "Переход в папку проекта..."
@@ -59,7 +62,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-User=$USER
+User=$RUN_USER
 Environment=CBR_HOME=$CBR_HOME
 WorkingDirectory=$CBR_HOME
 ExecStart=$BIN
@@ -74,7 +77,7 @@ EOF
 
 # Ротация логов (шаблон deploy/logrotate.conf)
 echo "Запись правил ротации логов $LOGROTATE_FILE..."
-sed -e "s|@CBR_HOME@|$CBR_HOME|g" -e "s|@USER@|$USER|g" -e "s|@GROUP@|$(id -gn)|g" \
+sed -e "s|@CBR_HOME@|$CBR_HOME|g" -e "s|@USER@|$RUN_USER|g" -e "s|@GROUP@|$(id -gn)|g" \
   "$DEPLOY_DIR/logrotate.conf" | sudo tee "$LOGROTATE_FILE" >/dev/null \
   || { echo "Не удалось записать $LOGROTATE_FILE"; exit 1; }
 sudo chmod 644 "$LOGROTATE_FILE"

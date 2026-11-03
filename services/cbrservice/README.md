@@ -1,11 +1,17 @@
 # cbrservice
 
-Единый бэкенд-сервис для Ubuntu, один процесс и одна systemd-служба:
+Бэкенд для Ubuntu из двух независимых systemd-служб над общей папкой `~/.cbr`.
+
+**cbrservice** — основной процесс:
 
 - **recorder**: опрашивает status API по списку пользователей и, когда стрим начинается,
   записывает его (HLS, без ffmpeg) в `~/.cbr/recordings/`.
 - **telegram**: бот для управления списком пользователей (`/add`, `/del`, `/list`) и уведомлений.
 - **httpapi**: HTTP API на `:8000` для клиента CBRPlayer: авторизация и раздача видео из `~/.cbr/media/`.
+
+**cbrconvert** — отдельная служба: переносит завершённые записи из `~/.cbr/recordings/` в `~/.cbr/media/`
+в виде HLS без перекодирования (`ffmpeg -c copy`) и удаляет исходники. Подробнее — в разделе
+[Перенос записей в медиатеку](#перенос-записей-в-медиатеку-cbrconvert).
 
 Формат `config.json` описан в [docs/watcher.md](docs/watcher.md). Требуется **Go 1.26+**; нужная патч-версия
 закреплена в `go.mod` (`toolchain`), Go скачает её сам.
@@ -15,6 +21,7 @@
 ```
 cbrservice/
 ├── cmd/cbrservice/     # main: флаги, сигналы, подкоманда hash-password
+├── cmd/cbrconvert/     # main службы переноса записей в медиатеку
 ├── internal/
 │   ├── app/            # сборка компонентов и общий жизненный цикл
 │   ├── config/         # типизированный config.json с проверкой при старте
@@ -26,6 +33,7 @@ cbrservice/
 │   ├── httpapi/        # HTTP API для плеера (fiber)
 │   ├── auth/           # пароль и токен плеера (auth.json)
 │   ├── library/        # медиатека: метаданные видео
+│   ├── converter/      # recordings → HLS в media (ffmpeg -c copy)
 │   └── ctxutil/        # мелкие хелперы для context
 ├── deploy/             # установка на Ubuntu: скрипт, шаблон config.json, правила logrotate
 ├── scripts/            # утилиты ffmpeg/HLS (make_hls.sh, convert.sh, …)
@@ -43,7 +51,7 @@ cbrservice/
 
 ```bash
 make help     # список целей
-make build    # bin/cbrservice с версией из git describe
+make build    # bin/cbrservice и bin/cbrconvert с версией из git describe
 make test     # тесты с -race
 make lint     # golangci-lint (конфиг .golangci.yml)
 make vuln     # govulncheck
@@ -60,22 +68,44 @@ make check    # vet + lint + test + vuln: всё перед коммитом
 
 ```
 ~/.cbr/
-├── bin/cbrservice          # бинарник демона
+├── bin/                    # бинарники cbrservice и cbrconvert
 ├── config/
 │   ├── config.json         # настройки: токен бота, base_url, прокси, адрес HTTP (chmod 600)
 │   └── auth.json           # хэш пароля для плеера (создаётся командой hash-password)
 ├── data/data.db            # список отслеживаемых пользователей (bbolt)
 ├── recordings/             # сырые записи стримов (*.ts / *.mp4, part-файлы)
+│   └── failed/             # записи, которые cbrconvert не смог преобразовать
 ├── media/                  # HLS-библиотека, которую видит плеер (<папка>/playlist.m3u8)
-└── logs/cbrservice.log     # stdout/stderr службы (ротация через logrotate)
+└── logs/                   # cbrservice.log, cbrconvert.log (ротация через logrotate)
 ```
 
 Относительный путь `storage.db` в `config.json` разрешается от `~/.cbr/data/`.
 Шаблон конфига лежит в [deploy/config.example.json](deploy/config.example.json), описание полей в [docs/watcher.md](docs/watcher.md).
 
-`recordings/` и `media/` разделены.
-Запись попадает в плеер после конвертации в HLS. `make_hls.sh` создаёт папку с результатом в текущей директории, поэтому запускать его нужно из `media/`:
-`cd ~/.cbr/media && <repo>/services/cbrservice/scripts/make_hls.sh ~/.cbr/recordings/<file>.ts`.
+`recordings/` и `media/` разделены: запись попадает в плеер после переноса службой cbrconvert.
+
+## Перенос записей в медиатеку (cbrconvert)
+
+Каждые 5 минут (`-interval`) cbrconvert ищет в `recordings/` завершённые записи — файлы `.ts`/`.mp4`
+(пока part пишется, у него суффикс `.download`) — и для каждой:
+
+1. нарезает её в HLS без перекодирования во временную скрытую папку `media/.convert-<имя>`:
+   `.ts` → MPEG-TS сегменты, `.mp4` (fMP4) → fMP4 сегменты `.m4s` с `init.mp4`, примерно по 6 секунд
+   (резать можно только по ключевым кадрам);
+2. проверяет, что плейлист дописан до `#EXT-X-ENDLIST`, и атомарно переименовывает папку в `media/<имя>`
+   (плеер не видит недорезанное видео; существующие видео не перезаписываются — к имени добавляется `_2`, `_3`…);
+3. удаляет исходник.
+
+Каждый part — отдельное видео. Если ffmpeg не справился, запись переносится в `recordings/failed/` и больше
+не обрабатывается. Остановка службы прерывает текущую нарезку; исходник остаётся и будет обработан при
+следующем запуске. Второй экземпляр над той же папкой не запустится (блокировка `data/cbrconvert.lock`).
+
+```bash
+~/.cbr/bin/cbrconvert -once                       # один проход и выход
+~/.cbr/bin/cbrconvert -interval 5m -min-age 1m    # как служба
+```
+
+Нужен `ffmpeg` (`sudo apt install ffmpeg`). Установка службы — `deploy/cbrconvert.sh` (см. ниже).
 
 ## Запуск локально
 
@@ -102,6 +132,18 @@ services/cbrservice/deploy/cbrservice.sh
 5. Запускает службу.
 
 Посмотреть логи: `tail -f ~/.cbr/logs/cbrservice.log`.
+
+Служба переноса записей ставится отдельно (нужен `ffmpeg`):
+
+```bash
+services/cbrservice/deploy/cbrconvert.sh                         # интервал 5m, min-age 1m
+CONVERT_INTERVAL=10m services/cbrservice/deploy/cbrconvert.sh   # свои параметры
+```
+
+Скрипт собирает `~/.cbr/bin/cbrconvert`, записывает `/etc/systemd/system/cbrconvert.service`
+(с пониженным приоритетом CPU и диска, чтобы не мешать записи) и запускает её. Логи: `~/.cbr/logs/cbrconvert.log`,
+их ротацию покрывает то же правило logrotate. Службы независимы: cbrconvert можно останавливать и
+перезапускать, не трогая cbrservice.
 
 ## Тесты
 

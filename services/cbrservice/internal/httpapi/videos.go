@@ -34,6 +34,7 @@ var contentTypes = map[string]string{
 	".jpg":  "image/jpeg",
 	".jpeg": "image/jpeg",
 	".mp4":  "video/mp4",
+	".m4s":  "video/iso.segment",
 	".vtt":  "text/vtt",
 	".zip":  "application/zip",
 }
