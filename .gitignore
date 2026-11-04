@@ -3,7 +3,6 @@
 #   1. Общие правила (ОС, редакторы, логи, секреты) — действуют везде
 #   2. apps/ios         — Xcode / Swift
 #   3. services/        — общие правила Go
-#   4. services/cbrservice — специфичное для cbrservice
 # =============================================================================
 
 # --- 1. Общие ------------------------------------------------------------------
@@ -98,16 +97,10 @@ services/**/vendor/
 services/**/go.work
 services/**/go.work.sum
 
-# --- 4. services/cbrservice -----------------------------------------------------
+# Бинарники make build (services/<служба>/bin/) покрыты правилом services/**/bin/ выше
 
-# Бинарник
-services/cbrservice/cmd/cbrservice/cbrservice
-services/cbrservice/cmd/cbrconvert/cbrconvert
-
-# Тестовые артефакты (данные сервиса живут вне репозитория, в ~/.cbr)
-services/cbrservice/testdata/output/
-
-# Секреты (config.json содержит токен Telegram-бота)
-services/cbrservice/**/config.json
-services/cbrservice/**/secret.json
-services/cbrservice/**/.token
+# Секреты: конфиги служб живут вне репозитория, в ~/.cbr/config/
+services/**/config.json
+services/**/auth.json
+services/**/secret.json
+services/**/.token

@@ -1,0 +1,39 @@
+# api
+
+HTTP API для плеера CBRPlayer: авторизация по паролю, раздача видео из медиатеки `~/.cbr/media`
+и управление списком слежения через общую базу `~/.cbr/data/cbr.db` (для будущего UI в iOS).
+
+## Эндпоинты
+
+Все, кроме `/auth`, требуют `Authorization: Bearer <token>`. Действует один токен: новый вход отменяет старый.
+
+| Метод и путь | Ответ |
+|---|---|
+| `POST /auth` `{"password"}` | `{"token"}`; 401 при неверном пароле |
+| `GET /videos` | `[{id, name, hlsURL, createdAt?, duration, resolution?, sizeMB?, segmentCount, avgSegmentDuration}]` |
+| `GET /videos/:name/*` | файлы HLS (`playlist.m3u8`, `.ts`, `.m4s`, `init.mp4`…) |
+| `DELETE /videos/:name` | удалить видео целиком |
+| `GET /watchlist` | `[{user, addedAt, addedBy, enabled, disabledReason?, roomStatus?, recording, updatedAt?}]` |
+| `POST /watchlist` `{"user"}` | 201; 409 если уже есть; 400 при недопустимом имени. Выключенного включает снова |
+| `DELETE /watchlist/:user` | 200; 404 если нет |
+| `GET /events?after=ID&limit=N` | `[{id, at, kind, user?, message}]` с `id > after`, `limit` по умолчанию 100, максимум 500 |
+
+`updatedAt` пуст, если recorder сейчас за пользователем не следит (выключен или ещё не подхватил).
+Время — RFC 3339 в UTC.
+
+## Настройка
+
+```bash
+~/.cbr/bin/api hash-password --password <пароль>   # создать ~/.cbr/config/auth.json
+```
+
+`~/.cbr/config/api.json` необязателен: `{"addr": ":8000"}` (по умолчанию `:8000`).
+
+## Запуск
+
+```bash
+make run                        # локально, с логом запросов (-log)
+services/deploy/install.sh api  # на сервере: unit cbr-api.service
+```
+
+Флаги: `-log` (логировать запросы), `-debug`, `-version`.

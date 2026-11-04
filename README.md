@@ -9,7 +9,12 @@ cbrmedia/
 │   ├── android/        # (планируется)
 │   └── web/            # (планируется)
 └── services/           # бэкенд (каждый сервис — отдельный Go-модуль)
-    └── cbrservice/     # запись стримов + Telegram-бот + HTTP-раздача видео (Go)
+    ├── core/           # общая библиотека: служебная папка ~/.cbr, база SQLite
+    ├── recorder/       # запись стримов
+    ├── tbot/           # Telegram-бот управления
+    ├── api/            # HTTP API для плеера
+    ├── converter/      # recordings → HLS в медиатеку (ffmpeg)
+    └── deploy/         # установка служб на Ubuntu
 ```
 
 ## Быстрый старт
@@ -17,7 +22,7 @@ cbrmedia/
 | Проект | Команда |
 |--------|---------|
 | iOS    | `open apps/ios/CBRPlayer.xcodeproj` → схема **CBRPlayer**, симулятор iPad |
-| cbrservice | `services/cbrservice/start.sh` (деплой на Ubuntu: `services/cbrservice/deploy/cbrservice.sh`) |
+| services | `make -C services/<служба> run`, тесты `make -C services test`, деплой на Ubuntu `services/deploy/install.sh` — см. [services/README.md](services/README.md) |
 
 ## История
 
@@ -26,6 +31,6 @@ cbrmedia/
 | Папка | Бывший репозиторий |
 |-------|--------------------|
 | `apps/ios/` | github.com/shurajan/FSPlayer |
-| `services/cbrservice/` | github.com/shurajan/mediafs + github.com/shurajan/Watcher (объединены) |
+| `services/` | github.com/shurajan/mediafs (→ api) + github.com/shurajan/Watcher (→ recorder, tbot) |
 
 Старые ветки перенесены с префиксом проекта: `fsplayer/…`, `mediafs/…`, `watcher/…`.

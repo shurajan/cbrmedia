@@ -1,6 +1,6 @@
 # CBRPlayer (iOS / iPadOS)
 
-SwiftUI-клиент cbrservice: логин по паролю, список видео, HLS-плеер с сохранением позиции.
+SwiftUI-клиент службы `services/api`: логин по паролю, список видео, HLS-плеер с сохранением позиции.
 
 - Xcode-проект `CBRPlayer.xcodeproj`, схема **CBRPlayer**, только iPad (`TARGETED_DEVICE_FAMILY = 2`), iOS 18.0, Swift 6, bundle `com.bralnin.cbrplayer`.
 - Без внешних SPM-зависимостей. Info.plist генерируется (`GENERATE_INFOPLIST_FILE`, ключи `INFOPLIST_KEY_*` в pbxproj).
@@ -20,7 +20,7 @@ SwiftUI-клиент cbrservice: логин по паролю, список ви
 | `Scenes/Settings/` | `SettingsView`, `GlobalSettings` (оверлей производительности), `PerfomanceMonitor/` |
 | `Controls/FSVideoPlayer/` | свой плеер: `FSPlayerController` (play/pause/seek/scrub, очередь seek), `FSVideoPlayerLayerView`, `FSVideoPlayerView`, `FSVideoScrubber` |
 | `Services/` | `AuthService`, `VideoService` (singletons `@MainActor`, `Result<_, Error>`), `NetworkServiceError`, `KeychainTokenService` (токен), `UserDataStorageService` (UserDefaults: host, позиции видео), `SessionStorage` (`ObservableObject`: token, host, logout) |
-| `Models/VideoItemModel.swift` | DTO `GET /videos` — должен совпадать с Go `httpapi.MediaFile` |
+| `Models/VideoItemModel.swift` | DTO `GET /videos` — должен совпадать с Go `MediaFile` в `services/api/internal/httpapi/videos.go` |
 | `Helpers/` | `Color.dynamicColor(light:dark:)`, расширения View |
 
 ## Соглашения

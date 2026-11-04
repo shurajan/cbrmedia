@@ -1,0 +1,108 @@
+package httpapi
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/gofiber/fiber/v3"
+
+	"cbr/core/store"
+)
+
+func watchlistApp(t *testing.T) (*fiber.App, *store.Store) {
+	t.Helper()
+	db, err := store.Open(filepath.Join(t.TempDir(), "cbr.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	app := fiber.New()
+	app.Get("/watchlist", listWatchlist(db))
+	app.Post("/watchlist", addToWatchlist(db))
+	app.Delete("/watchlist/:user", removeFromWatchlist(db))
+	app.Get("/events", listEvents(db))
+	return app, db
+}
+
+func do(t *testing.T, app *fiber.App, method, target, body string) (int, string) {
+	t.Helper()
+	req := httptest.NewRequest(method, target, strings.NewReader(body))
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(b)
+}
+
+func TestWatchlistEndpoints(t *testing.T) {
+	app, db := watchlistApp(t)
+
+	if code, _ := do(t, app, http.MethodPost, "/watchlist", `{"user":"alice"}`); code != http.StatusCreated {
+		t.Fatalf("add: %d", code)
+	}
+	if code, _ := do(t, app, http.MethodPost, "/watchlist", `{"user":"alice"}`); code != http.StatusConflict {
+		t.Fatalf("duplicate add: %d", code)
+	}
+	if code, _ := do(t, app, http.MethodPost, "/watchlist", `{"user":"../x"}`); code != http.StatusBadRequest {
+		t.Fatalf("invalid add: %d", code)
+	}
+	if code, _ := do(t, app, http.MethodPost, "/watchlist", `{`); code != http.StatusBadRequest {
+		t.Fatalf("bad json: %d", code)
+	}
+
+	_ = db.SetState(context.Background(), "alice", "public", true)
+	code, body := do(t, app, http.MethodGet, "/watchlist", "")
+	var items []WatchEntry
+	if err := json.Unmarshal([]byte(body), &items); err != nil || code != http.StatusOK {
+		t.Fatalf("list: %d %s", code, body)
+	}
+	if len(items) != 1 || items[0].User != "alice" || items[0].AddedBy != AddedBy ||
+		!items[0].Enabled || !items[0].Recording || items[0].RoomStatus != "public" || items[0].UpdatedAt == "" {
+		t.Fatalf("items = %+v", items)
+	}
+
+	if code, _ := do(t, app, http.MethodDelete, "/watchlist/alice", ""); code != http.StatusOK {
+		t.Fatalf("delete: %d", code)
+	}
+	if code, _ := do(t, app, http.MethodDelete, "/watchlist/alice", ""); code != http.StatusNotFound {
+		t.Fatalf("second delete: %d", code)
+	}
+	if _, body := do(t, app, http.MethodGet, "/watchlist", ""); strings.TrimSpace(body) != "[]" {
+		t.Fatalf("empty list = %s", body)
+	}
+}
+
+func TestEventsEndpoint(t *testing.T) {
+	app, db := watchlistApp(t)
+	ctx := context.Background()
+	for _, msg := range []string{"one", "two", "three"} {
+		_, _ = db.AddEvent(ctx, store.KindRecordingStarted, "alice", msg)
+	}
+
+	code, body := do(t, app, http.MethodGet, "/events?after=1&limit=1", "")
+	var items []EventItem
+	if err := json.Unmarshal([]byte(body), &items); err != nil || code != http.StatusOK {
+		t.Fatalf("events: %d %s", code, body)
+	}
+	if len(items) != 1 || items[0].ID != 2 || items[0].Message != "two" || items[0].Kind != store.KindRecordingStarted {
+		t.Fatalf("items = %+v", items)
+	}
+
+	for _, q := range []string{"after=x", "after=-1", "limit=0", "limit=abc"} {
+		if code, _ := do(t, app, http.MethodGet, "/events?"+q, ""); code != http.StatusBadRequest {
+			t.Errorf("%s: code %d, want 400", q, code)
+		}
+	}
+}

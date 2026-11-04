@@ -1,0 +1,78 @@
+# services
+
+Бэкенд cbrmedia для Ubuntu: четыре независимые systemd-службы над общей служебной папкой `~/.cbr`.
+Каждую можно включать и выключать отдельно — остальные продолжают работать.
+
+| Служба | Что делает | Пишет | Читает |
+|---|---|---|---|
+| [recorder](recorder/README.md) | опрашивает status API и записывает стримы | `recordings/`, состояние и события в базе | список слежения |
+| [tbot](tbot/README.md) | Telegram: `/add`, `/del`, `/list`, уведомление о выключенных пользователях | список слежения | состояние, события |
+| [api](api/README.md) | HTTP API плеера: видео, список слежения, события | список слежения, удаляет видео | `media/`, база |
+| [converter](converter/README.md) | `recordings/` → HLS в `media/` (ffmpeg) | `media/` | `recordings/` |
+
+`core/` — общая библиотека: служебная папка, база, конфиги, запуск.
+
+## Как службы связаны
+
+Напрямую — никак. Общение идёт через общую базу `~/.cbr/data/cbr.db` (SQLite, WAL) и через файлы:
+
+```
+ tbot / api / (WhatsApp…) ──пишут──▶ watchlist ──читает раз в 3 с──▶ recorder ──▶ recordings/ ──▶ converter ──▶ media/ ──▶ api
+                ▲                                                       │
+                └──────────── events, watch_state ◀──────── пишет ──────┘
+```
+
+- **watchlist** — кого записывать. Интерфейсы не отдают команд recorder: они меняют список, а recorder сам
+  сверяется с ним. Новый интерфейс (например, WhatsApp) — это новая служба, которая пишет в ту же таблицу.
+- **watch_state** — что recorder делает сейчас (статус комнаты, идёт ли запись).
+- **events** — журнал событий. Каждый читатель хранит свою позицию в `cursors`, поэтому выключенный бот
+  после запуска дошлёт пропущенное.
+
+## Служебная папка `~/.cbr`
+
+Переопределяется переменной `CBR_HOME`. Службы сами создают недостающие папки и работают из `~/.cbr`,
+поэтому неважно, откуда запущен бинарник. Пути описаны в одном месте: `core/home`.
+
+```
+~/.cbr/
+├── bin/                 # recorder, tbot, api, converter
+├── config/
+│   ├── recorder.json    # base_url, proxy
+│   ├── tbot.json        # bot_token, allowed_user_id, proxy (chmod 600)
+│   ├── api.json         # addr (необязательно, по умолчанию :8000)
+│   └── auth.json        # хэш пароля плеера (api hash-password)
+├── data/
+│   ├── cbr.db           # общая база (SQLite)
+│   └── converter.lock
+├── recordings/          # сырые записи (*.ts / *.mp4, part-файлы); failed/ — не удалось преобразовать
+├── media/               # HLS-библиотека плеера (<папка>/playlist.m3u8)
+└── logs/                # <служба>.log, ротация через logrotate
+```
+
+## Разработка
+
+Требуется **Go 1.26+** (патч-версия закреплена в `go.mod`, Go скачает её сам). Каждая служба — отдельный
+Go-модуль; `core` подключается через `replace cbr/core => ../core`.
+
+```bash
+make test           # из services/: тесты всех модулей
+make check          # vet + golangci-lint + test + govulncheck по всем модулям
+make -C recorder run                       # запустить одну службу локально
+CBR_HOME=/tmp/cbr-dev make -C api run      # с отдельной тестовой папкой
+```
+
+В папке модуля доступны те же цели (`make help`). Общий конфиг линтера — `.golangci.yml`, общие цели — `common.mk`.
+
+## Деплой на Ubuntu
+
+```bash
+services/deploy/install.sh                 # все службы
+services/deploy/install.sh recorder tbot   # только эти
+sudo systemctl disable --now cbr-tbot      # выключить службу
+tail -f ~/.cbr/logs/recorder.log
+```
+
+Скрипт делает `git pull`, собирает бинарники в `~/.cbr/bin/`, перезаписывает unit-файлы `cbr-<служба>.service`
+и запускает службы. Если для службы нет конфига, кладёт шаблон и пропускает её. Ротация логов
+(`/etc/logrotate.d/cbrmedia`): раз в день или больше 100 МБ, 14 архивов, `copytruncate`.
+Прежние монолитные службы `cbrservice` и `cbrconvert` скрипт останавливает и удаляет.
