@@ -28,8 +28,13 @@
 
 ```bash
 make test | make check | make build   # из services/ — по всем модулям; из папки модуля — по нему
-CBR_HOME=/tmp/cbr-dev make -C tbot run
+./dev.sh [служба…]                    # собрать и запустить вместе локально (CBR_HOME=~/cbr-dev, DEBUG=1)
+CBR_HOME=~/cbr-dev make -C tbot run   # одну службу через go run
 ```
+
+`dev.sh` (bash 3.2 из macOS: без ассоциативных массивов и `wait -n`) и `deploy/install.sh` проверяют одно и то же
+перед запуском: конфиг `<служба>.json` (нет — кладут шаблон и пропускают службу), `auth.json` у api, ffmpeg у converter.
+Меняешь набор служб или их аргументы — правь оба скрипта.
 
 ## Соглашения
 
@@ -37,7 +42,7 @@ CBR_HOME=/tmp/cbr-dev make -C tbot run
 - Новый интерфейс управления = новый модуль: пишет `watchlist`, читает `events` со своим `Consumer` в `cursors`.
 - У службы свой `~/.cbr/config/<служба>.json` (`config.example.json` в папке модуля), бинарник `cmd/<служба>`,
   unit `cbr-<служба>.service`, лог `logs/<служба>.log`. Новую службу добавить в `deploy/install.sh` (`ALL_SERVICES`,
-  `preflight`) и в `Makefile` (`MODULES`).
+  `preflight`), `dev.sh` (`ALL_SERVICES`, `ready`, `args`) и `Makefile` (`MODULES`).
 - `log/slog`, остановка через `context`, без глобального состояния; комментарии и документация на русском;
   тесты рядом с кодом, база в тестах — настоящая SQLite во временной папке.
 - Изменил JSON `/videos` или `/watchlist` → обнови `apps/ios/CBRPlayer/Models/` и таблицу в `api/README.md`.

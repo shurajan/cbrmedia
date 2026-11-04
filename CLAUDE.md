@@ -29,10 +29,17 @@ CBRPlayer ──HTTP :8000 (Bearer)──▶ api ──▶ ~/.cbr/media
   (в iOS пока не используются); полная таблица — `services/api/README.md`
 - Всё, кроме `/auth`, требует `Authorization: Bearer <token>`. Транспорт — plain HTTP (`http://host:port`).
 
+## Запуск
+
+- Весь back-end локально (macOS): `services/dev.sh [служба…]` — данные в `~/cbr-dev` (`CBR_HOME`), Ctrl+C останавливает всё.
+- Тесты и проверки: `make -C services test` / `make -C services check` (vet, golangci-lint, тесты, govulncheck).
+- Сервер (Ubuntu): `services/deploy/install.sh [служба…]` — systemd-units `cbr-<служба>.service`.
+- iOS: `open apps/ios/CBRPlayer.xcodeproj`; в симуляторе хост `localhost:8000`.
+
 ## Общее
 
 - Единый `.gitignore` в корне (секции: общие / iOS / Go).
-- Секреты (`config.json`, `auth.json`) живут вне репо в `~/.cbr/config/`.
+- Секреты (`<служба>.json`, `auth.json`) живут вне репо в `$CBR_HOME/config/`.
 - Службы независимы: включаются/выключаются отдельно (`cbr-<служба>.service`), общаются только через
   общую базу `~/.cbr/data/cbr.db` и файлы.
 - История: объединено из репозиториев FSPlayer, mediafs, Watcher (ветки с префиксами `fsplayer/…`, `mediafs/…`, `watcher/…`).

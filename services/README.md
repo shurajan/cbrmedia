@@ -55,11 +55,24 @@
 Go-модуль; `core` подключается через `replace cbr/core => ../core`.
 
 ```bash
-make test           # из services/: тесты всех модулей
-make check          # vet + golangci-lint + test + govulncheck по всем модулям
-make -C recorder run                       # запустить одну службу локально
-CBR_HOME=/tmp/cbr-dev make -C api run      # с отдельной тестовой папкой
+./dev.sh                    # собрать и запустить весь back-end локально (macOS/Linux)
+./dev.sh recorder api       # только эти службы
+make test                   # тесты всех модулей
+make check                  # vet + golangci-lint + test + govulncheck по всем модулям
 ```
+
+`dev.sh` работает со служебной папкой `~/cbr-dev`, чтобы не трогать `~/.cbr` (другую задаёт `CBR_HOME`).
+Перед первым запуском:
+
+1. `./dev.sh` — соберёт бинарники в `~/cbr-dev/bin/` и положит шаблоны `recorder.json` и `tbot.json` в `~/cbr-dev/config/`;
+2. заполнить конфиги и задать пароль плеера: `CBR_HOME=~/cbr-dev ~/cbr-dev/bin/api hash-password --password <пароль>`;
+3. `./dev.sh` ещё раз — службы запустятся в этом терминале, вывод каждой с префиксом `[служба]`,
+   копия в `~/cbr-dev/logs/`. Ctrl+C останавливает все.
+
+Если на сервере уже работает бот с тем же токеном, локальный tbot будет получать `409 Conflict`: заведите
+тестового бота или запускайте без него (`./dev.sh recorder api converter`). converter нужен ffmpeg
+(`brew install ffmpeg`); локально он проверяет записи каждую минуту (`CONVERT_INTERVAL`). Подробные логи — `DEBUG=1 ./dev.sh`.
+Одну службу без сборки можно запустить через `go run`: `CBR_HOME=~/cbr-dev make -C api run`.
 
 В папке модуля доступны те же цели (`make help`). Общий конфиг линтера — `.golangci.yml`, общие цели — `common.mk`.
 

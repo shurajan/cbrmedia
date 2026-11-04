@@ -22,7 +22,7 @@ cbrmedia/
 | Проект | Команда |
 |--------|---------|
 | iOS    | `open apps/ios/CBRPlayer.xcodeproj` → схема **CBRPlayer**, симулятор iPad |
-| services | `make -C services/<служба> run`, тесты `make -C services test`, деплой на Ubuntu `services/deploy/install.sh` — см. [services/README.md](services/README.md) |
+| services | локально `services/dev.sh`, тесты `make -C services test`, деплой на Ubuntu `services/deploy/install.sh` — см. [services/README.md](services/README.md) |
 
 ## История
 
