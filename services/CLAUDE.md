@@ -42,7 +42,7 @@ CBR_HOME=~/cbr-dev make -C tbot run   # одну службу через go run
 - Новый интерфейс управления = новый модуль: пишет `watchlist`, читает `events` со своим `Consumer` в `cursors`.
 - У службы свой `~/.cbr/config/<служба>.json` (`config.example.json` в папке модуля), бинарник `cmd/<служба>`,
   unit `cbr-<служба>.service`, лог `logs/<служба>.log`. Новую службу добавить в `deploy/install.sh` (`ALL_SERVICES`,
-  `preflight`), `dev.sh` (`ALL_SERVICES`, `ready`, `args`) и `Makefile` (`MODULES`).
+  `preflight`), `dev.sh` (`ALL_SERVICES`, `ready`, `args`), `Makefile` (`MODULES`) и бинарники в корневой `.gitignore`.
 - `log/slog`, остановка через `context`, без глобального состояния; комментарии и документация на русском;
   тесты рядом с кодом, база в тестах — настоящая SQLite во временной папке.
 - Изменил JSON `/videos` или `/watchlist` → обнови `apps/ios/CBRPlayer/Models/` и таблицу в `api/README.md`.

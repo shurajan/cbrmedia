@@ -30,6 +30,11 @@ Thumbs.db
 .env
 *.env
 
+# Служебная папка служб (CBR_HOME), если её создали внутри репозитория:
+# конфиги с токенами, база, записи и медиатека
+.cbr/
+cbr-dev/
+
 # --- 2. iOS (apps/ios) ----------------------------------------------------------
 
 # Пользовательские настройки Xcode
@@ -86,8 +91,23 @@ services/**/*.dylib
 services/**/*.test
 services/**/*.out
 
-# Локальные базы данных
+# Локальные базы данных (SQLite в режиме WAL держит рядом -wal и -shm) и блокировки
 services/**/*.db
+services/**/*.db-wal
+services/**/*.db-shm
+services/**/*.lock
+
+# Бинарники служб: make build, dev.sh и deploy/install.sh кладут их в bin/ или в
+# $CBR_HOME/bin, а простой `go build` — в корень модуля или в cmd/<служба>/.
+# Новую службу добавить сюда же.
+services/recorder/recorder
+services/recorder/cmd/recorder/recorder
+services/tbot/tbot
+services/tbot/cmd/tbot/tbot
+services/api/api
+services/api/cmd/api/api
+services/converter/converter
+services/converter/cmd/converter/converter
 
 # Сборка и зависимости
 services/**/bin/
@@ -97,10 +117,12 @@ services/**/vendor/
 services/**/go.work
 services/**/go.work.sum
 
-# Бинарники make build (services/<служба>/bin/) покрыты правилом services/**/bin/ выше
-
-# Секреты: конфиги служб живут вне репозитория, в ~/.cbr/config/
+# Секреты: конфиги служб живут вне репозитория, в $CBR_HOME/config/.
+# Шаблоны services/<служба>/config.example.json под эти правила не попадают.
 services/**/config.json
+services/**/recorder.json
+services/**/tbot.json
+services/**/api.json
 services/**/auth.json
 services/**/secret.json
 services/**/.token
