@@ -7,13 +7,17 @@
 Каждая папка — отдельный Go-модуль `cbr/<имя>` (Go 1.26), `replace cbr/core => ../core`.
 Импорты: `cbr/core/...`, `cbr/<служба>/internal/...` (goimports local-prefix `cbr/`).
 
+Общее для всех модулей лежит в `services/`: `Makefile` (цель по всем `MODULES`), `common.mk` (цели модуля,
+подключается из `<модуль>/Makefile` с `SERVICE`/`RUN_ARGS`), `.golangci.yml` (golangci-lint находит его из
+подпапок), `dev.sh` (локальный запуск), `deploy/` (`install.sh` + `logrotate.conf`).
+
 | Модуль | Пакеты |
 |--------|--------|
 | `core` | `home` (`Layout`, `Prepare()` = resolve+mkdir+chdir, `ConfigFile(svc)`, `AuthFile()`, `DBFile()`), `store` (SQLite), `config` (`Load(path, Validator)`, `ValidateURL`), `svc` (`Logger`, `SignalContext`), `ctxutil.Sleep` |
-| `recorder` | `internal/app` (`Run`: ClearStates → RecoverPartial → цикл `Sync` раз в 3 с, prune событий раз в час), `internal/recorder` (`Manager.Sync(ctx, desired)`, `watch`, `record`, `disable` при 4xx; `Sink` = store; `status.go` StatusClient + `NewHTTPClient` с выключенным TLS-verify; `delay.go` интервалы), `internal/hls` (свой HLS-рекордер: `playlist.go`, `crypto.go` AES-128, `writer.go` part-файлы `.download`, `RecoverPartial`, `recorder.go` `Record`/`DetectFormat`), `internal/config` |
-| `tbot` | `internal/telegram` (`Bot`: `/add /del /list`, inline-меню удаления, `ForwardEvents` с курсором `tbot` — в чат только `forwardKinds` (сейчас `user_disabled`), `formatEntry`, `chunk`), `internal/app`, `internal/config` |
+| `recorder` | `internal/app` (`Run`: ClearStates → RecoverPartial → цикл `Sync` раз в 3 с, prune событий раз в час), `internal/recorder` (`Manager.Sync(ctx, desired)`, `watch`, `record`, `disable` при 4xx; `Sink` = store; `status.go` StatusClient + `NewHTTPClient` с выключенным TLS-verify; `delay.go` интервалы), `internal/hls` (свой HLS-рекордер: `playlist.go`, `crypto.go` AES-128, `writer.go` part-файлы `.download` с правами `0o600` и ротацией раз в час, `RecoverPartial`, `recorder.go` `Record`/`DetectFormat`), `internal/config` |
+| `tbot` | `internal/telegram` (`Bot`: `/add /del /list`, inline-меню удаления, `ForwardEvents` раз в 3 с с курсором `tbot` — в чат только `forwardKinds` (сейчас `user_disabled`; о записях бот не пишет намеренно), `formatEntry`, `chunk`), `internal/app`, `internal/config` |
 | `api` | `internal/httpapi` (fiber v3: `server.go` маршруты, `auth.go` bearer, `videos.go`, `watchlist.go` `/watchlist` + `/events`), `internal/auth` (bcrypt + один uuid-токен в auth.json), `internal/library` (метаданные видео из m3u8, fallback ffprobe), `internal/app`, `internal/config`; `cmd/api hash-password` |
-| `converter` | `internal/converter` (`RunOnce`: `cleanupTemp` → `pending` → `remux` в `media/.convert-<имя>` → `validatePlaylist` → rename / `recordings/failed/`), `cmd/converter` (flock `data/converter.lock`). Базу не использует |
+| `converter` | `internal/converter` (`Run` каждые `-interval`, по умолчанию 5 мин, в `dev.sh` 1 мин; `RunOnce`: `cleanupTemp` → `pending` → `remux` в `media/.convert-<имя>` → `validatePlaylist` → rename / `recordings/failed/`), `cmd/converter` (flock `data/converter.lock`). Базу не использует |
 
 ## Общая база (`core/store`, `~/.cbr/data/cbr.db`)
 
@@ -46,4 +50,7 @@ CBR_HOME=~/cbr-dev make -C tbot run   # одну службу через go run
 - `log/slog`, остановка через `context`, без глобального состояния; комментарии и документация на русском;
   тесты рядом с кодом, база в тестах — настоящая SQLite во временной папке.
 - Изменил JSON `/videos` или `/watchlist` → обнови `apps/ios/CBRPlayer/Models/` и таблицу в `api/README.md`.
-- Зависимости: при `go mod tidy` следи, чтобы версии не откатывались (fiber v3.3.0, go-telegram/bot v1.20.0).
+- Права: служебная папка и подпапки `0o750` (`home.Ensure`, `chmod 750` в `dev.sh`/`install.sh`), секреты и записи `0o600`.
+  Все службы работают от одного пользователя (`User=` в unit), поэтому шире права не нужны.
+- Зависимости: при `go mod tidy` следи, чтобы версии не откатывались (fiber v3.3.0, go-telegram/bot v1.20.0,
+  modernc.org/sqlite v1.61.1). `go mod verify` ругается на локальный `cbr/core` (replace) — это нормально.

@@ -15,7 +15,7 @@
 tbot (Telegram) / api (iOS) ──пишут──▶ cbr.db: watchlist ──▶ recorder ──опрос status API, HLS──▶ ~/.cbr/recordings
                     ▲                                            │
                     └──── events, watch_state ◀──────────────────┘
-converter (ffmpeg -c copy, каждые 5 мин): recordings ──▶ ~/.cbr/media/<имя>/playlist.m3u8
+converter (ffmpeg -c copy, каждые 5 мин; в dev.sh — 1 мин): recordings ──▶ ~/.cbr/media/<имя>/playlist.m3u8
 CBRPlayer ──HTTP :8000 (Bearer)──▶ api ──▶ ~/.cbr/media
 ```
 
@@ -38,7 +38,8 @@ CBRPlayer ──HTTP :8000 (Bearer)──▶ api ──▶ ~/.cbr/media
 
 ## Общее
 
-- Единый `.gitignore` в корне (секции: общие / iOS / Go).
+- Единый `.gitignore` в корне (секции: общие / iOS / Go). Игнорирует конфиги служб с токенами, служебную папку
+  внутри репо (`.cbr/`, `cbr-dev/`), файлы SQLite и бинарники от `go build` — их перечисляет по именам служб.
 - Секреты (`<служба>.json`, `auth.json`) живут вне репо в `$CBR_HOME/config/`.
 - Службы независимы: включаются/выключаются отдельно (`cbr-<служба>.service`), общаются только через
   общую базу `~/.cbr/data/cbr.db` и файлы.
