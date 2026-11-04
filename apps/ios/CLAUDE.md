@@ -1,0 +1,29 @@
+# CBRPlayer (iOS / iPadOS)
+
+SwiftUI-клиент cbrservice: логин по паролю, список видео, HLS-плеер с сохранением позиции.
+
+- Xcode-проект `CBRPlayer.xcodeproj`, схема **CBRPlayer**, только iPad (`TARGETED_DEVICE_FAMILY = 2`), iOS 18.0, Swift 6, bundle `com.bralnin.cbrplayer`.
+- Без внешних SPM-зависимостей. Info.plist генерируется (`GENERATE_INFOPLIST_FILE`, ключи `INFOPLIST_KEY_*` в pbxproj).
+- Группы — file-system synchronized (objectVersion 77): новый `.swift` в `CBRPlayer/` попадает в таргет автоматически, pbxproj править не нужно.
+- Сборка из CLI: `xcodebuild -project CBRPlayer.xcodeproj -scheme CBRPlayer -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4)' build`
+- Тесты — шаблонные заглушки (`CBRPlayerTests`, `CBRPlayerUITests`). Исторические имена `FS*` (от FSPlayer) сохранены.
+
+## Структура `CBRPlayer/`
+
+| Путь | Что |
+|------|-----|
+| `FSPlayerApp.swift` | `@main`, настройка UINavigationBar |
+| `Scenes/FSPlayerView.swift` | корень: `NavigationStack` по `NavigationDestination {login, videoList}`, держит `SessionStorage`, `GlobalSettings` |
+| `Scenes/LoginView/` | `LoginView`, `LoginViewModel` (host + пароль → `AuthService.login`), `HostAndPortInputView` |
+| `Scenes/VideoList/` | `VideoListView`, `VideoListViewModel` (загрузка, сортировка `SortOption`, удаление с подтверждением), `VideoItemView` |
+| `Scenes/VideoView/` | `VideoPlayerView`, `VideoPlayerViewModel` — `AVURLAsset` с заголовком `Authorization` через `AVURLAssetHTTPHeaderFieldsKey`, URL `http://host + hlsURL`, позиция сохраняется на паузе, сбрасывается в конце |
+| `Scenes/Settings/` | `SettingsView`, `GlobalSettings` (оверлей производительности), `PerfomanceMonitor/` |
+| `Controls/FSVideoPlayer/` | свой плеер: `FSPlayerController` (play/pause/seek/scrub, очередь seek), `FSVideoPlayerLayerView`, `FSVideoPlayerView`, `FSVideoScrubber` |
+| `Services/` | `AuthService`, `VideoService` (singletons `@MainActor`, `Result<_, Error>`), `NetworkServiceError`, `KeychainTokenService` (токен), `UserDataStorageService` (UserDefaults: host, позиции видео), `SessionStorage` (`ObservableObject`: token, host, logout) |
+| `Models/VideoItemModel.swift` | DTO `GET /videos` — должен совпадать с Go `httpapi.MediaFile` |
+| `Helpers/` | `Color.dynamicColor(light:dark:)`, расширения View |
+
+## Соглашения
+
+- MVVM: `ObservableObject` + `@Published`, view model'и `@MainActor`; DI через `environmentObject`.
+- Сеть — `URLSession` async/await, plain HTTP на `host:port`, ошибки маппятся в `NetworkServiceError`.

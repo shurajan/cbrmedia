@@ -1,1 +1,7 @@
 # CBRPlayer (iOS)
+
+SwiftUI-клиент для iPad к [cbrservice](../../services/cbrservice/README.md): вход по паролю, список видео
+из медиатеки, HLS-плеер с сохранением позиции.
+
+Открыть `CBRPlayer.xcodeproj`, схема **CBRPlayer**, симулятор iPad (iOS 18+). При первом запуске укажите
+`host:port` сервиса (по умолчанию порт `8000`) и пароль, заданный командой `cbrservice hash-password`.

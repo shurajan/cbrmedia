@@ -86,7 +86,6 @@ services/**/*.so
 services/**/*.dylib
 services/**/*.test
 services/**/*.out
-services/**/cmd/cbrconvert/cbrconvert
 
 # Локальные базы данных
 services/**/*.db

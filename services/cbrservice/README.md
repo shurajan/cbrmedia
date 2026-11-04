@@ -36,8 +36,6 @@ cbrservice/
 │   ├── converter/      # recordings → HLS в media (ffmpeg -c copy)
 │   └── ctxutil/        # мелкие хелперы для context
 ├── deploy/             # установка на Ubuntu: скрипт, шаблон config.json, правила logrotate
-├── scripts/            # утилиты ffmpeg/HLS (make_hls.sh, convert.sh, …)
-├── postman/            # коллекция запросов к API
 ├── docs/
 ├── Makefile
 └── .golangci.yml
