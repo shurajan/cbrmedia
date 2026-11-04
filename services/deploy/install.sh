@@ -47,6 +47,9 @@ VERSION="$(git -C "$SERVICES_DIR" describe --tags --always --dirty 2>/dev/null |
 
 echo "Подготовка служебной папки $CBR_HOME..."
 mkdir -p "$CBR_HOME"/{bin,config,data,recordings,media,logs} || die "не удалось создать $CBR_HOME"
+# Служебная папка — только для пользователя служб и его группы (mkdir -p создаёт
+# с правами по umask, обычно 0755); chmod исправляет и уже существующие папки.
+chmod 750 "$CBR_HOME" "$CBR_HOME"/{bin,config,data,recordings,media,logs} || die "не удалось задать права на $CBR_HOME"
 
 # --- прежние службы ------------------------------------------------------------
 for legacy in cbrservice cbrconvert; do

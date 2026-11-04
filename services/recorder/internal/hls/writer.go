@@ -99,7 +99,7 @@ func (w *segmentWriter) createNextPart() (*os.File, error) {
 		} else if !errors.Is(err, fs.ErrNotExist) {
 			return nil, err
 		}
-		f, err := os.OpenFile(w.tmpPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		f, err := os.OpenFile(w.tmpPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 		if errors.Is(err, fs.ErrExist) {
 			continue
 		}

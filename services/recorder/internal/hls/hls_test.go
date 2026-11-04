@@ -549,3 +549,21 @@ func TestRecordSameBaseNameDoesNotOverwrite(t *testing.T) {
 		}
 	}
 }
+
+// TestPartFileIsPrivate: part-файлы записи доступны только владельцу.
+func TestPartFileIsPrivate(t *testing.T) {
+	w := &segmentWriter{dir: t.TempDir(), baseName: "alice_2026-01-01_00-00", ext: "ts", log: discard}
+	f, err := w.createNextPart()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm&0o077 != 0 {
+		t.Errorf("part file mode = %o, want no group/other access", perm)
+	}
+}

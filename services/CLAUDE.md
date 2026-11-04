@@ -31,8 +31,6 @@ make test | make check | make build   # из services/ — по всем мод�
 CBR_HOME=/tmp/cbr-dev make -C tbot run
 ```
 
-Известное: `make check` падает на gosec G302 в `recorder/internal/hls/writer.go` (part-файлы `0o644`) — было до разделения.
-
 ## Соглашения
 
 - Службы не импортируют друг друга и не общаются по сети между собой — только `core/store` и файлы в `~/.cbr`.
