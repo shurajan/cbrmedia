@@ -19,11 +19,11 @@ struct LoginView: View {
                 HostAndPortInputView(host: $viewModel.host)
 
                 SecureField("Password", text: $viewModel.password)
-                    .textFieldStyle(.roundedBorder)
+                    .themedField()
 
                 if let error = viewModel.errorMessage {
                     Text(error)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Theme.warning)
                         .multilineTextAlignment(.center)
                 }
 
@@ -32,14 +32,14 @@ struct LoginView: View {
                 } label: {
                     if viewModel.isLoading {
                         ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .dynamicColor(light: .white, dark: .black)))
+                            .progressViewStyle(CircularProgressViewStyle(tint: Theme.onPrimary))
                     } else {
                         Text("Login")
-                            .foregroundColor(.dynamicColor(light: .white, dark: .black))
+                            .foregroundColor(Theme.onPrimary)
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.dynamicColor(light: .black, dark: .white))
+                .tint(Theme.primary)
                 .disabled(viewModel.isLoading)
             }
             .padding()
@@ -48,6 +48,7 @@ struct LoginView: View {
 
             Spacer()
         }
+        .themedScreenBackground()
         .navigationTitle("Login")
         .navigationBarTitleDisplayMode(.large)
         .onChange(of: viewModel.didLogin) { oldValue, newValue in

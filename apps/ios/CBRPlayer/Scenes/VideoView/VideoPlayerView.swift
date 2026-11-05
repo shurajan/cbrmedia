@@ -31,10 +31,14 @@ struct VideoPlayerView: View {
                 }
             } else if let error = viewModel.errorMessage {
                 Text(error)
+                    .foregroundStyle(Theme.warning)
                     .padding()
+                    .themedScreenBackground()
             } else {
                 ProgressView("Loading…")
                     .progressViewStyle(.circular)
+                    .tint(Theme.accent)
+                    .themedScreenBackground()
             }
         }
         .withPerformanceOverlay()

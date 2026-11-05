@@ -30,7 +30,7 @@ struct HostAndPortInputView: View {
     var body: some View {
         VStack(spacing: 12) {
             TextField("IP or hostname", text: $host)
-                .textFieldStyle(.roundedBorder)
+                .themedField()
                 .keyboardType(.asciiCapable)
                 .autocorrectionDisabled(true)
                 .textInputAutocapitalization(.never)
@@ -47,7 +47,7 @@ struct HostAndPortInputView: View {
                 }
 
             TextField("Port", text: $port)
-                .textFieldStyle(.roundedBorder)
+                .themedField()
                 .keyboardType(.numberPad)
                 .onChange(of: port) {
                     let filtered = port.filter { $0.isNumber }

@@ -24,7 +24,7 @@ struct VideoListView: View {
             } else if let message = viewModel.errorMessage {
                 VStack(spacing: 16) {
                     Text(message)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Theme.warning)
                         .multilineTextAlignment(.center)
 
                     Button(action: {
@@ -33,10 +33,10 @@ struct VideoListView: View {
                     }) {
                         Text("Back to Login")
                             .font(.headline)
-                            .foregroundColor(Color.dynamicColor(light: .black, dark: .white))
+                            .foregroundColor(Theme.onPrimary)
                             .padding(.vertical, 10)
                             .padding(.horizontal, 20)
-                            .background(Color.dynamicColor(light: .black.opacity(0.1), dark: .white.opacity(0.1)))
+                            .background(Theme.primary)
                             .cornerRadius(12)
                     }
                 }
@@ -46,6 +46,7 @@ struct VideoListView: View {
                 content
             }
         }
+        .themedScreenBackground()
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
@@ -54,7 +55,7 @@ struct VideoListView: View {
                 }) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(Color.dynamicColor(light: .black, dark: .white))
+                        .foregroundColor(Theme.accent)
                 }
             }
             
@@ -64,7 +65,7 @@ struct VideoListView: View {
                 }) {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(Color.dynamicColor(light: .black, dark: .white))
+                        .foregroundColor(Theme.accent)
                 }
             }
             
@@ -72,7 +73,7 @@ struct VideoListView: View {
                 Button(action: { showSettings = true }) {
                     Image(systemName: "gearshape")
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(Color.dynamicColor(light: .black, dark: .white))
+                        .foregroundColor(Theme.accent)
                 }
             }
         }
@@ -107,6 +108,7 @@ private extension VideoListView {
             HStack {
                 Text("Sort by:")
                     .font(.subheadline)
+                    .foregroundStyle(Theme.textSecondary)
                 Picker("Sort", selection: $viewModel.sortOption) {
                     ForEach(VideoListViewModel.SortOption.allCases) { option in
                         Text(option.rawValue).tag(option)
@@ -128,11 +130,14 @@ private extension VideoListView {
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }
-                        .tint(Color.dynamicColor(light: .red, dark: .pink))
+                        .tint(Theme.destructiveFill)
                     }
+                    .listRowBackground(Theme.surface)
+                    .listRowSeparatorTint(Theme.separator)
                 }
             }
             .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
             .refreshable { await refresh() }
         }
     }

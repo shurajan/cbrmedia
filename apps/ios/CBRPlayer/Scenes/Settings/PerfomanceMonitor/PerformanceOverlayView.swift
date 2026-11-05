@@ -22,7 +22,7 @@ struct PerformanceOverlayView: View {
         .padding(8)
         .background(Color.black.opacity(0.6))
         .cornerRadius(8)
-        .foregroundColor(.green)
+        .foregroundColor(Theme.warning)
         .padding()
         .onAppear {
             monitor.start()

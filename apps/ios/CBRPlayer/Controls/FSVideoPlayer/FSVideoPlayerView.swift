@@ -117,7 +117,7 @@ struct FSVideoPlayerView: View {
                 VStack(spacing: 12) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 40))
-                        .foregroundColor(.yellow)
+                        .foregroundColor(Theme.warning)
 
                     Text(message)
                         .foregroundColor(.white)

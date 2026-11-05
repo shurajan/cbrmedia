@@ -30,11 +30,11 @@ struct FSVideoScrubber: View {
                     .frame(height: trackHeight)
 
                 Capsule()
-                    .fill(Color.red)
+                    .fill(Theme.playback)
                     .frame(width: thumbX, height: trackHeight)
 
                 Circle()
-                    .fill(Color.red)
+                    .fill(Theme.playback)
                     .frame(width: thumbSize, height: thumbSize)
                     .offset(x: thumbX - thumbSize / 2)
             }

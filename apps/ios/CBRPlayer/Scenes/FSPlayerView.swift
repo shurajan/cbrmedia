@@ -33,6 +33,6 @@ struct FSPlayerView: View {
                     }
                 }
         }
-        .tint(Color.dynamicColor(light: .black, dark: .white))
+        .tint(Theme.accent)
     }
 }

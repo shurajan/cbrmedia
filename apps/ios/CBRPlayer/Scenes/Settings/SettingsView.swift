@@ -14,7 +14,11 @@ struct SettingsView: View {
         NavigationView {
             Form {
                 Toggle("Enable Performance overlay", isOn: $globalSettings.isPerformanceOverlayEnabled)
+                    .tint(Theme.accentFill)
+                    .listRowBackground(Theme.surface)
             }
+            .scrollContentBackground(.hidden)
+            .background(Theme.background.ignoresSafeArea())
             .navigationTitle("Settings")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

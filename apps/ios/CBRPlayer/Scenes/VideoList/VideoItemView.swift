@@ -16,22 +16,23 @@ struct VideoItemView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(video.name)
                     .font(.headline)
+                    .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
 
                 HStack(alignment: .center, spacing: 12) {
                     if let date = video.createdDate {
                         Label(date.formatted(date: .numeric, time: .shortened), systemImage: "calendar")
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.textSecondary)
                     }
 
                     Label(video.formatDuration(), systemImage: "clock")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
 
                     Label(video.formatSize(), systemImage: "externaldrive")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                 }
             }
             .frame(minWidth: 100, maxWidth: .infinity, alignment: .leading)
@@ -44,15 +45,15 @@ struct VideoItemView: View {
                     .scaledToFit()
                     .frame(width: 20, height: 20)
                     .padding(16)
-                    .background(Color.green.opacity(0.15))
-                    .foregroundColor(.green)
+                    .background(Theme.background)
+                    .foregroundColor(Theme.playback)
                     .clipShape(Circle())
             }
             .buttonStyle(BorderlessButtonStyle())
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 12)
-        .background(Color(UIColor.secondarySystemBackground))
+        .background(Theme.surface)
         .cornerRadius(12)
     }
 }
