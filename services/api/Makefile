@@ -1,3 +1,3 @@
 SERVICE  := api
-RUN_ARGS := -log
+RUN_ARGS := -debug
 include ../common.mk

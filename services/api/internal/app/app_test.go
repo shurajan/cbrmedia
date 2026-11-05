@@ -51,7 +51,7 @@ func TestRunEndToEnd(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	go func() { done <- Run(ctx, layout, Options{}, log) }()
+	go func() { done <- Run(ctx, layout, log) }()
 
 	// Ждём HTTP API и логинимся.
 	var token string
@@ -112,7 +112,7 @@ func TestRunMissingAuthFile(t *testing.T) {
 	if err := layout.Ensure(); err != nil {
 		t.Fatal(err)
 	}
-	err := Run(context.Background(), layout, Options{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	err := Run(context.Background(), layout, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err == nil || !strings.Contains(err.Error(), "hash-password") {
 		t.Fatalf("err = %v, want hint about hash-password", err)
 	}

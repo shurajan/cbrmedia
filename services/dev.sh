@@ -82,7 +82,6 @@ args() {
   local debug=""
   [ -n "${DEBUG:-}" ] && debug="-debug"
   case "$1" in
-    api) echo "-log $debug" ;;
     converter) echo "-interval $CONVERT_INTERVAL -min-age $CONVERT_MIN_AGE $debug" ;;
     *) echo "$debug" ;;
   esac

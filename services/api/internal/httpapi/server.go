@@ -17,11 +17,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"os"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
-	"github.com/gofiber/fiber/v3/middleware/logger"
 
 	"cbr/api/internal/auth"
 	"cbr/core/store"
@@ -31,9 +29,8 @@ const shutdownTimeout = 10 * time.Second
 
 // Config — настройки сервера.
 type Config struct {
-	Addr        string // адрес для прослушивания, например ":8000"
-	MediaDir    string // папка медиатеки
-	LogRequests bool   // логировать каждый HTTP-запрос
+	Addr     string // адрес для прослушивания, например ":8000"
+	MediaDir string // папка медиатеки
 }
 
 // Server — HTTP-сервер плеера.
@@ -47,8 +44,9 @@ type Server struct {
 func New(cfg Config, authSvc *auth.Service, db *store.Store, log *slog.Logger) *Server {
 	app := fiber.New()
 
-	if cfg.LogRequests {
-		app.Use(logger.New(logger.Config{Stream: os.Stdout}))
+	// Запросы (в том числе каждый сегмент видео) логируются только с -debug.
+	if debugEnabled(log) {
+		app.Use(requestLogger(log))
 	}
 
 	app.Post("/auth", authHandler(authSvc, log))

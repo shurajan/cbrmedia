@@ -15,13 +15,8 @@ import (
 	"cbr/core/store"
 )
 
-// Options — параметры запуска из командной строки.
-type Options struct {
-	LogRequests bool // логировать HTTP-запросы
-}
-
 // Run обслуживает HTTP API до отмены ctx.
-func Run(ctx context.Context, layout home.Layout, opts Options, log *slog.Logger) error {
+func Run(ctx context.Context, layout home.Layout, log *slog.Logger) error {
 	cfg, err := config.Load(layout.ConfigFile(config.Name))
 	if err != nil {
 		return err
@@ -46,9 +41,8 @@ func Run(ctx context.Context, layout home.Layout, opts Options, log *slog.Logger
 	}()
 
 	server := httpapi.New(httpapi.Config{
-		Addr:        cfg.Addr,
-		MediaDir:    layout.Media,
-		LogRequests: opts.LogRequests,
+		Addr:     cfg.Addr,
+		MediaDir: layout.Media,
 	}, authSvc, db, log)
 	return server.Run(ctx)
 }

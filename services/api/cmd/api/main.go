@@ -3,7 +3,7 @@
 //
 // Использование:
 //
-//	api [-log] [-debug]                 запустить службу
+//	api [-debug]                        запустить службу (-debug: ещё и лог каждого HTTP-запроса)
 //	api hash-password --password <pwd>  задать пароль плеера (~/.cbr/config/auth.json)
 //	api -version                        показать версию
 package main
@@ -39,8 +39,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	fs := flag.NewFlagSet("api", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	logRequests := fs.Bool("log", false, "log every HTTP request")
-	debug := fs.Bool("debug", false, "enable debug logging")
+	debug := fs.Bool("debug", false, "enable debug logging, including every HTTP request")
 	showVersion := fs.Bool("version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -61,7 +60,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	defer stop()
 
 	log.Info("starting api", "version", version, "home", layout.Root)
-	if err := app.Run(ctx, layout, app.Options{LogRequests: *logRequests}, log); err != nil {
+	if err := app.Run(ctx, layout, log); err != nil {
 		log.Error("api stopped with error", "err", err)
 		return 1
 	}
