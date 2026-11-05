@@ -22,7 +22,7 @@ SwiftUI-клиент службы `services/api`: логин по паролю, 
 | `Scenes/FSPlayerView.swift` | корень: `NavigationStack` по `NavigationDestination {login, main}`, держит `SessionStorage`, `GlobalSettings` |
 | `Scenes/Main/MainTabView.swift` | после входа: `TabView` «Videos» / «Watchlist» с нижней панелью иконок без подписей (названия — в `accessibilityLabel`; на iPad — через `.horizontalSizeClass = .compact` у `TabView`, содержимому вкладок возвращается исходный размер; без этого вкладки сверху); общие кнопки назад, обновить (открытую вкладку — через `refreshSignal`), настройки. Кнопки `.toolbar` внутри вкладки через `TabView` не доходят — добавлять сюда |
 | `Scenes/LoginView/` | `LoginView`, `LoginViewModel` (host + пароль → `AuthService.login`), `HostAndPortInputView` |
-| `Scenes/VideoList/` | `VideoListView` (обновление по `refreshSignal`), `VideoListViewModel` (загрузка, `filterText` → `filteredFiles`: по имени A–Z, подстрока без учёта регистра; удаление с подтверждением); над таблицей поле фильтра, при пустом результате — «Nothing found» на фоне, `VideoItemView` |
+| `Scenes/VideoList/` | `VideoListView` (поле фильтра над таблицей; при пустом результате — «Nothing found» на фоне; обновление по `refreshSignal`), `VideoListViewModel` (загрузка, `filterText` → `filteredFiles`: по имени A–Z, подстрока без учёта регистра; удаление с подтверждением), `VideoItemView` |
 | `Scenes/Watchlist/` | `WatchlistView` (поле «Add user to watch» + Add, ошибка под полем, свайп Remove с подтверждением, автообновление статусов раз в 10 с), `WatchlistViewModel`, `WatchEntryView` (статус: 🔴 запись / 👁 слежение / ⏳ ждёт recorder / ⏸ выключен + кнопка Enable) |
 | `Scenes/VideoView/` | `VideoPlayerView`, `VideoPlayerViewModel` — `AVURLAsset` с заголовком `Authorization` через `AVURLAssetHTTPHeaderFieldsKey`, URL `http://host + hlsURL`, позиция сохраняется на паузе, сбрасывается в конце |
 | `Scenes/Settings/` | `SettingsView`, `GlobalSettings` (оверлей производительности), `PerfomanceMonitor/` |
@@ -49,13 +49,13 @@ SwiftUI-клиент службы `services/api`: логин по паролю, 
 | `background` | deep950 | фон экранов, панель навигации, подложка кнопки play |
 | `surface` / `surfaceElevated` | deep900 / deep800 | карточки и строки, поля (в т.ч. фильтр), форма настроек / выделение |
 | `separator` / `border` | deep700 / sky700 | разделители строк / рамка полей |
-| `textPrimary` / `textSecondary` / `textTertiary` | deep50 / deep300 / deep500 | основной текст / метаданные, иконки поля фильтра / неактивное, «Nothing found» |
-| `accent` | sky400 (также `AccentColor`) | текст и иконки интерактивных элементов (4.8 на surface) |
+| `textPrimary` / `textSecondary` / `textTertiary` | deep50 / deep300 / deep500 | основной текст / метаданные, иконки полей / неактивное, «Nothing found», «No users yet», статус «Waiting for recorder» |
+| `accent` | sky400 (также `AccentColor`) | текст и иконки интерактивных элементов, выбранная вкладка, статус «Watching» (4.8 на surface) |
 | `accentFill` / `accentPressed` | sky500 / sky300 | дорожка переключателя / нажатое состояние |
-| `primary` / `primaryPressed` / `onPrimary` | ocean700 / ocean800 / белый | заливка кнопок Login, Back to Login |
-| `playback` | orange400 | иконка play, прогресс и бегунок плеера |
+| `primary` / `primaryPressed` / `onPrimary` | ocean700 / ocean800 / белый | заливка кнопок Login, Back to Login, Add, Enable |
+| `playback` | orange400 | иконка play, прогресс и бегунок плеера, статус «Recording» |
 | `destructive` / `destructiveFill` | orange400 / orange600 | удаление: текст / заливка свайпа под белым (5.4) |
-| `warning` / `onWarning` | yellow200 / deep950 | тексты ошибок, значок ошибки в плеере, оверлей производительности |
+| `warning` / `onWarning` | yellow200 / deep950 | тексты ошибок, значок ошибки в плеере, оверлей производительности, статус «Disabled» |
 | `info` | sky400 | информационные сообщения |
 
 Зелёного в палитре нет, поэтому роли `success` нет — при необходимости согласовать цвет.
@@ -68,6 +68,12 @@ SwiftUI-клиент службы `services/api`: логин по паролю, 
 войти в симуляторе на `127.0.0.1:<порт>`. Для снимков удобен временный UI-тест в `CBRPlayerUITests/` с `XCTAttachment`
 и выгрузкой через `xcrun xcresulttool export attachments`; после входа iOS показывает системный диалог «Сохранить пароль?» —
 его закрывает `XCUIApplication(bundleIdentifier: "com.apple.springboard")`. Временный тест после проверки удалить.
+
+- Состояния пользователей без запущенного recorder: добавить через `POST /watchlist`, затем прямо в базе
+  `sqlite3 $CBR_HOME/data/cbr.db` — `UPDATE watchlist SET enabled=0, disabled_reason=…`, `INSERT INTO watch_state(user, room_status, recording, updated_at)` (время в unix ms).
+- Приложение помнит `host:port` с прошлого входа — в тесте поля очищать перед вводом.
+- Нажатие на вкладку, пока исчезает диалог пароля, теряется — повторять, пока не появится контент вкладки.
+- Кнопка удаления в системном алерте красноватая — это цвет iOS, палитрой не задаётся.
 
 ## Соглашения
 
