@@ -3,7 +3,9 @@
 SwiftUI-клиент службы `services/api`: логин по паролю, список видео, HLS-плеер с сохранением позиции.
 
 - Xcode-проект `CBRPlayer.xcodeproj`, схема **CBRPlayer**, только iPad (`TARGETED_DEVICE_FAMILY = 2`), iOS 26.6, Swift 6, bundle `com.bralnin.cbrplayer`.
-- Без внешних SPM-зависимостей. Info.plist генерируется (`GENERATE_INFOPLIST_FILE`, ключи `INFOPLIST_KEY_*` в pbxproj).
+- Без внешних SPM-зависимостей. Info.plist генерируется (`GENERATE_INFOPLIST_FILE`, ключи `INFOPLIST_KEY_*` в pbxproj):
+  отображаемое имя `cbr` (`CFBundleDisplayName`), категория `public.app-category.video`, всегда тёмная тема (`UIUserInterfaceStyle = Dark`).
+- Иконка — `Assets.xcassets/AppIcon.appiconset/CBR_AppIcon_1024.png` (один размер 1024, остальные Xcode генерирует).
 - Группы — file-system synchronized (objectVersion 77): новый `.swift` в `CBRPlayer/` попадает в таргет автоматически, pbxproj править не нужно.
 - Сборка из CLI: `xcodebuild -project CBRPlayer.xcodeproj -scheme CBRPlayer -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M5)' build`
   (нужен симулятор iOS ≥ 26.6).
@@ -54,6 +56,13 @@ SwiftUI-клиент службы `services/api`: логин по паролю, 
 Зелёного в палитре нет, поэтому роли `success` нет — при необходимости согласовать цвет.
 Глобальные цвета UIKit (панель навигации, `UISegmentedControl`) — в `FSPlayerApp.init`. Плеер чёрный под видео с белыми элементами.
 Поля ввода — модификатор `themedField()` (системный `.roundedBorder` в тёмной теме заливает чёрным).
+
+## Проверка экранов без сервера
+
+Поднять `services/api` с отдельной `CBR_HOME` и тестовым видео (`ffmpeg -f lavfi -i testsrc2=… -f hls …` в `media/<имя>/`),
+войти в симуляторе на `127.0.0.1:<порт>`. Для снимков удобен временный UI-тест в `CBRPlayerUITests/` с `XCTAttachment`
+и выгрузкой через `xcrun xcresulttool export attachments`; после входа iOS показывает системный диалог «Сохранить пароль?» —
+его закрывает `XCUIApplication(bundleIdentifier: "com.apple.springboard")`. Временный тест после проверки удалить.
 
 ## Соглашения
 

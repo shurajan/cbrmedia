@@ -6,7 +6,7 @@
 | Папка | Что | Детали |
 |-------|-----|--------|
 | `services/` | Go 1.26, независимые службы `recorder`, `tbot`, `api`, `converter` + библиотека `core` (общая база SQLite) | `services/CLAUDE.md` |
-| `apps/ios/` | CBRPlayer — SwiftUI-клиент для iPad (Xcode, без внешних зависимостей) | `apps/ios/CLAUDE.md` |
+| `apps/ios/` | CBRPlayer (на экране — «cbr») — SwiftUI-клиент для iPad, iOS 26.6, тёмная тема на палитре `Theme` | `apps/ios/CLAUDE.md` |
 | `apps/android`, `apps/web` | планируются, пока нет | — |
 
 ## Поток данных
@@ -34,7 +34,7 @@ CBRPlayer ──HTTP :8000 (Bearer)──▶ api ──▶ ~/.cbr/media
 - Весь back-end локально (macOS): `services/dev.sh [служба…]` — данные в `~/cbr-dev` (`CBR_HOME`), Ctrl+C останавливает всё.
 - Тесты и проверки: `make -C services test` / `make -C services check` (vet, golangci-lint, тесты, govulncheck).
 - Сервер (Ubuntu): `services/deploy/install.sh [служба…]` — systemd-units `cbr-<служба>.service`.
-- iOS: `open apps/ios/CBRPlayer.xcodeproj`; в симуляторе хост `localhost:8000`.
+- iOS: `open apps/ios/CBRPlayer.xcodeproj`, симулятор iPad с iOS ≥ 26.6; хост в приложении `localhost:8000`.
 
 ## Общее
 
