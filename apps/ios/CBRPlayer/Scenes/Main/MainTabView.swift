@@ -32,13 +32,20 @@ struct MainTabView: View {
 
     var body: some View {
         TabView(selection: $selection) {
-            Tab("Videos", systemImage: "play.rectangle", value: MainTab.videos) {
+            // Во вкладках только иконки; название — для VoiceOver.
+            Tab(value: MainTab.videos) {
                 VideoListView(navigationPath: $navigationPath, refreshSignal: videosRefresh)
                     .environment(\.horizontalSizeClass, regularSizeClass)
+            } label: {
+                Image(systemName: "play.rectangle")
+                    .accessibilityLabel("Videos")
             }
-            Tab("Watchlist", systemImage: "eye", value: MainTab.watchlist) {
+            Tab(value: MainTab.watchlist) {
                 WatchlistView(refreshSignal: watchlistRefresh)
                     .environment(\.horizontalSizeClass, regularSizeClass)
+            } label: {
+                Image(systemName: "eye")
+                    .accessibilityLabel("Watchlist")
             }
         }
         .environment(\.horizontalSizeClass, .compact)
