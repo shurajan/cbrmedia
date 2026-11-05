@@ -104,22 +104,11 @@ struct VideoListView: View {
 private extension VideoListView {
     var content: some View {
         VStack(spacing: 10) {
-            // Сортировка
-            HStack {
-                Text("Sort by:")
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.textSecondary)
-                Picker("Sort", selection: $viewModel.sortOption) {
-                    ForEach(VideoListViewModel.SortOption.allCases) { option in
-                        Text(option.rawValue).tag(option)
-                    }
-                }
-                .pickerStyle(.segmented)
-            }
-            .padding(.horizontal)
-            
+            filterField
+                .padding(.horizontal)
+
             List {
-                ForEach(viewModel.sortedFiles, id: \.id) { video in
+                ForEach(viewModel.filteredFiles, id: \.id) { video in
                     VideoItemView(video: video) { video in
                         viewModel.selectedVideo = video
                     }
@@ -138,8 +127,40 @@ private extension VideoListView {
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
+            .overlay {
+                // Фильтр ничего не нашёл: таблица пустая, подсказка — на фоне.
+                if viewModel.filteredFiles.isEmpty, !viewModel.videos.isEmpty {
+                    Text("Nothing found")
+                        .font(.title3)
+                        .foregroundStyle(Theme.textTertiary)
+                        .allowsHitTesting(false)
+                }
+            }
             .refreshable { await refresh() }
         }
+    }
+
+    /// Фильтр по имени на месте прежнего переключателя сортировки.
+    var filterField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(Theme.textSecondary)
+            TextField("Filter by name", text: $viewModel.filterText)
+                .autocorrectionDisabled(true)
+                .textInputAutocapitalization(.never)
+                .submitLabel(.search)
+            if !viewModel.filterText.isEmpty {
+                Button {
+                    viewModel.filterText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear filter")
+            }
+        }
+        .themedField()
     }
 
     func initialLoad() async {

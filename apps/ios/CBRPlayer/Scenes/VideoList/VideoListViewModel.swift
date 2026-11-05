@@ -13,41 +13,20 @@ final class VideoListViewModel: ObservableObject {
     @Published var videos: [VideoItemModel]     = []
     @Published var errorMessage: String?        = nil
     @Published var isLoading                    = false
-    @Published var sortOption: SortOption       = .name
+    @Published var filterText                   = ""
     @Published var videoToDelete: VideoItemModel?      = nil
     @Published var showDeleteConfirmation       = false
     @Published var selectedVideo: VideoItemModel? = nil
 
-    // MARK: ‑ Sorting
-    enum SortOption: String, CaseIterable, Identifiable {
-        case name       = "Name (A–Z)"
-        case size       = "Size (Descending)"
-        case duration   = "Duration (Descending)"
-        case createdAt  = "Newest First"
+    // MARK: ‑ Filtering
 
-        var id: String { rawValue }
-    }
-
-    var sortedFiles: [VideoItemModel] {
-        switch sortOption {
-        case .name:
-            return videos.sorted { $0.name.lowercased() < $1.name.lowercased() }
-
-        case .size:
-            return videos.sorted {
-                ($0.sizeMB ?? 0) > ($1.sizeMB ?? 0)
-            }
-
-        case .duration:
-            return videos.sorted {
-                $0.duration > $1.duration
-            }
-
-        case .createdAt:
-            return videos.sorted {
-                ($0.createdDate ?? .distantPast) > ($1.createdDate ?? .distantPast)
-            }
-        }
+    /// Видео по имени (A–Z), отфильтрованные по `filterText`: подстрока в любом месте
+    /// имени, без учёта регистра и диакритики. Пустой фильтр — все видео.
+    var filteredFiles: [VideoItemModel] {
+        let query = filterText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sorted = videos.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        guard !query.isEmpty else { return sorted }
+        return sorted.filter { $0.name.localizedStandardContains(query) }
     }
 
     // MARK: ‑ Public API (вызывается View)

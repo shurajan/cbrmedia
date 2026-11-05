@@ -27,13 +27,6 @@ struct FSPlayerApp: App {
         UINavigationBar.appearance().compactAppearance = appearance
 
         UINavigationBar.appearance().tintColor = UIColor(Theme.accent)
-
-        // Сегментный переключатель сортировки: выбранный сегмент — заливка primary.
-        let segmented = UISegmentedControl.appearance()
-        segmented.backgroundColor = UIColor(Theme.surface)
-        segmented.selectedSegmentTintColor = UIColor(Theme.primary)
-        segmented.setTitleTextAttributes([.foregroundColor: UIColor(Theme.textSecondary)], for: .normal)
-        segmented.setTitleTextAttributes([.foregroundColor: UIColor(Theme.onPrimary)], for: .selected)
     }
     
     var body: some Scene {
