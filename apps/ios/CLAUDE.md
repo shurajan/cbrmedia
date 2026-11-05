@@ -1,6 +1,7 @@
 # CBRPlayer (iOS / iPadOS)
 
-SwiftUI-клиент службы `services/api`: логин по паролю, список видео, HLS-плеер с сохранением позиции.
+SwiftUI-клиент службы `services/api`: логин по паролю, вкладки «Videos» (медиатека, HLS-плеер с сохранением позиции)
+и «Watchlist» (кого recorder отслеживает и записывает).
 
 - Xcode-проект `CBRPlayer.xcodeproj`, схема **CBRPlayer**, только iPad (`TARGETED_DEVICE_FAMILY = 2`), iOS 26.6, Swift 6, bundle `com.bralnin.cbrplayer`.
 - Без внешних SPM-зависимостей. Info.plist генерируется (`GENERATE_INFOPLIST_FILE`, ключи `INFOPLIST_KEY_*` в pbxproj):
@@ -9,7 +10,8 @@ SwiftUI-клиент службы `services/api`: логин по паролю, 
 - Группы — file-system synchronized (objectVersion 77): новый `.swift` в `CBRPlayer/` попадает в таргет автоматически, pbxproj править не нужно.
 - Сборка из CLI: `xcodebuild -project CBRPlayer.xcodeproj -scheme CBRPlayer -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M5)' build`
   (нужен симулятор iOS ≥ 26.6).
-- Тесты: `CBRPlayerTests/VideoListFilterTests` (Swift Testing) — фильтр списка; остальное — шаблонные заглушки. Deployment target 26.6 у проекта и всех таргетов —
+- Тесты (Swift Testing): `CBRPlayerTests/VideoListFilterTests` — фильтр видео, `WatchlistTests` — модель `/watchlist` и
+  `WatchlistViewModel` на фейковом сервисе; UI-тесты — шаблонные заглушки. Deployment target 26.6 у проекта и всех таргетов —
   менять синхронно, иначе тесты не соберутся. Исторические имена `FS*` (от FSPlayer) сохранены.
 
 ## Структура `CBRPlayer/`
@@ -17,14 +19,17 @@ SwiftUI-клиент службы `services/api`: логин по паролю, 
 | Путь | Что |
 |------|-----|
 | `FSPlayerApp.swift` | `@main`, настройка UINavigationBar |
-| `Scenes/FSPlayerView.swift` | корень: `NavigationStack` по `NavigationDestination {login, videoList}`, держит `SessionStorage`, `GlobalSettings` |
+| `Scenes/FSPlayerView.swift` | корень: `NavigationStack` по `NavigationDestination {login, main}`, держит `SessionStorage`, `GlobalSettings` |
+| `Scenes/Main/MainTabView.swift` | после входа: `TabView` «Videos» / «Watchlist» с нижней панелью иконок (на iPad — через `.horizontalSizeClass = .compact` у `TabView`, содержимому вкладок возвращается исходный размер; без этого вкладки сверху); общие кнопки назад, обновить (открытую вкладку — через `refreshSignal`), настройки. Кнопки `.toolbar` внутри вкладки через `TabView` не доходят — добавлять сюда |
 | `Scenes/LoginView/` | `LoginView`, `LoginViewModel` (host + пароль → `AuthService.login`), `HostAndPortInputView` |
-| `Scenes/VideoList/` | `VideoListView`, `VideoListViewModel` (загрузка, `filterText` → `filteredFiles`: по имени A–Z, подстрока без учёта регистра; удаление с подтверждением); над таблицей поле фильтра, при пустом результате — «Nothing found» на фоне, `VideoItemView` |
+| `Scenes/VideoList/` | `VideoListView` (обновление по `refreshSignal`), `VideoListViewModel` (загрузка, `filterText` → `filteredFiles`: по имени A–Z, подстрока без учёта регистра; удаление с подтверждением); над таблицей поле фильтра, при пустом результате — «Nothing found» на фоне, `VideoItemView` |
+| `Scenes/Watchlist/` | `WatchlistView` (поле «Add user to watch» + Add, ошибка под полем, свайп Remove с подтверждением, автообновление статусов раз в 10 с), `WatchlistViewModel`, `WatchEntryView` (статус: 🔴 запись / 👁 слежение / ⏳ ждёт recorder / ⏸ выключен + кнопка Enable) |
 | `Scenes/VideoView/` | `VideoPlayerView`, `VideoPlayerViewModel` — `AVURLAsset` с заголовком `Authorization` через `AVURLAssetHTTPHeaderFieldsKey`, URL `http://host + hlsURL`, позиция сохраняется на паузе, сбрасывается в конце |
 | `Scenes/Settings/` | `SettingsView`, `GlobalSettings` (оверлей производительности), `PerfomanceMonitor/` |
 | `Controls/FSVideoPlayer/` | свой плеер: `FSPlayerController` (play/pause/seek/scrub, очередь seek), `FSVideoPlayerLayerView`, `FSVideoPlayerView`, `FSVideoScrubber` |
-| `Services/` | `AuthService`, `VideoService` (singletons `@MainActor`, `Result<_, Error>`), `NetworkServiceError`, `KeychainTokenService` (токен), `UserDataStorageService` (UserDefaults: host, позиции видео), `SessionStorage` (`ObservableObject`: token, host, logout) |
+| `Services/` | `AuthService`, `VideoService`, `WatchlistService` (singletons `@MainActor`, `Result<_, Error>`; протоколы `@MainActor` — иначе Swift 6 не пропускает), `NetworkServiceError`, `KeychainTokenService` (токен), `UserDataStorageService` (UserDefaults: host, позиции видео), `SessionStorage` (`ObservableObject`: token, host, logout) |
 | `Models/VideoItemModel.swift` | DTO `GET /videos` — должен совпадать с Go `MediaFile` в `services/api/internal/httpapi/videos.go` |
+| `Models/WatchEntryModel.swift` | DTO `GET /watchlist` (Go `WatchEntry` в `watchlist.go`) и вычисляемый `status` |
 | `Helpers/Theme.swift` | палитра `Palette` и роли `Theme` (см. ниже), `Color(hex:)`, модификаторы `themedScreenBackground()`, `themedField()` |
 | `Helpers/View+Extension.swift` | оверлей производительности |
 

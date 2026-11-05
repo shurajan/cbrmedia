@@ -53,7 +53,7 @@ struct LoginView: View {
         .navigationBarTitleDisplayMode(.large)
         .onChange(of: viewModel.didLogin) { oldValue, newValue in
             if newValue {
-                navigationPath.append(.videoList)
+                navigationPath.append(.main)
             }
         }
     }

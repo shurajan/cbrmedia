@@ -10,11 +10,11 @@ import SwiftUI
 struct VideoListView: View {
     @EnvironmentObject private var session: SessionStorage
     @EnvironmentObject private var globalSettings: GlobalSettings
-    @Environment(\.dismiss) private var dismiss
     @Binding var navigationPath: [NavigationDestination]
+    /// Меняется, когда в MainTabView нажали «обновить».
+    var refreshSignal = 0
     
     @StateObject private var viewModel = VideoListViewModel()
-    @State private var showSettings = false
 
     var body: some View {
         VStack {
@@ -48,37 +48,7 @@ struct VideoListView: View {
         }
         .themedScreenBackground()
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button(action: {
-                    dismiss()
-                }) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(Theme.accent)
-                }
-            }
-            
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button(action: {
-                    Task { await refresh() }
-                }) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(Theme.accent)
-                }
-            }
-            
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button(action: { showSettings = true }) {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(Theme.accent)
-                }
-            }
-        }
-        //.navigationTitle("Media List")
-        .navigationBarBackButtonHidden(true) 
+        .onChange(of: refreshSignal) { Task { await refresh() } }
         .alert("Delete Video?", isPresented: $viewModel.showDeleteConfirmation, presenting: viewModel.videoToDelete) { file in
             Button("Delete", role: .destructive) {
                 Task { await delete(file) }
@@ -90,10 +60,6 @@ struct VideoListView: View {
         .task { await initialLoad() }
         .fullScreenCover(item: $viewModel.selectedVideo) { video in
             VideoPlayerView(video: video, session: session)
-                .environmentObject(globalSettings)
-        }
-        .sheet(isPresented: $showSettings) {
-            SettingsView()
                 .environmentObject(globalSettings)
         }
     }

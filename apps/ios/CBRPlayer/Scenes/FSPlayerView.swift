@@ -9,7 +9,7 @@ import SwiftUI
 
 enum NavigationDestination: Hashable {
     case login
-    case videoList
+    case main
 }
 
 struct FSPlayerView: View {
@@ -26,8 +26,8 @@ struct FSPlayerView: View {
                     case .login:
                         LoginView(navigationPath: $navigationPath)
                             .environmentObject(session)
-                    case .videoList:
-                        VideoListView(navigationPath: $navigationPath)
+                    case .main:
+                        MainTabView(navigationPath: $navigationPath)
                             .environmentObject(session)
                             .environmentObject(globalSettings)
                     }

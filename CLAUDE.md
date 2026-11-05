@@ -25,8 +25,9 @@ CBRPlayer ──HTTP :8000 (Bearer)──▶ api ──▶ ~/.cbr/media
 - `GET /videos` → `[{id, name, hlsURL, createdAt?, duration, resolution?, sizeMB?, segmentCount, avgSegmentDuration}]`
   — Go: `services/api/internal/httpapi/videos.go` `MediaFile`; Swift: `Models/VideoItemModel.swift`
 - `GET /videos/:name/*` — файлы HLS; `DELETE /videos/:name`
-- `GET/POST /watchlist`, `DELETE /watchlist/:user`, `GET /events?after=` — для будущего UI управления
-  (в iOS пока не используются); полная таблица — `services/api/README.md`
+- `GET/POST /watchlist`, `DELETE /watchlist/:user` — вкладка «Watchlist» в iOS
+  (Go `WatchEntry` в `watchlist.go` ↔ Swift `Models/WatchEntryModel.swift`)
+- `GET /events?after=` — пока не используется клиентами; полная таблица — `services/api/README.md`
 - Всё, кроме `/auth`, требует `Authorization: Bearer <token>`. Транспорт — plain HTTP (`http://host:port`).
 
 ## Запуск
