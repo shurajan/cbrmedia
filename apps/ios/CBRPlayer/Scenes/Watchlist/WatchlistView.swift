@@ -18,7 +18,13 @@ struct WatchlistView: View {
             addField
                 .padding(.horizontal)
 
-            if let user = viewModel.linkHint, viewModel.actionError == nil {
+            if let user = viewModel.checkingUser {
+                Text("Checking \(user)…")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+            } else if let user = viewModel.linkHint, viewModel.actionError == nil {
                 Text("Will add: \(user)")
                     .font(.subheadline)
                     .foregroundStyle(Theme.textSecondary)

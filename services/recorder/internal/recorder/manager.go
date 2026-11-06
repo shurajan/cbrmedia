@@ -32,6 +32,9 @@ type Sink interface {
 	ClearState(ctx context.Context, user string) error
 	AddEvent(ctx context.Context, kind, user, message string) (int64, error)
 	DisableUser(ctx context.Context, user, reason string) error
+	RemoveUser(ctx context.Context, user string) error
+	Verified(ctx context.Context, user string) (bool, error)
+	MarkVerified(ctx context.Context, user string) error
 }
 
 // sinkTimeout — сколько ждать записи в Sink, когда контекст слежения уже отменён.

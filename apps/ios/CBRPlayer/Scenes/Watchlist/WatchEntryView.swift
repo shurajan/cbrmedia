@@ -60,6 +60,8 @@ struct WatchEntryView: View {
         switch entry.status {
         case .recording: "record.circle"
         case .watching: "eye"
+        case .blocked: "nosign"
+        case .notFound: "questionmark.circle"
         case .waiting: "hourglass"
         case .disabled: "pause.circle"
         }
@@ -69,6 +71,8 @@ struct WatchEntryView: View {
         switch entry.status {
         case .recording: Theme.playback
         case .watching: Theme.accent
+        case .blocked: Theme.warning
+        case .notFound: Theme.textSecondary
         case .waiting: Theme.textTertiary
         case .disabled: Theme.warning
         }
@@ -80,6 +84,10 @@ struct WatchEntryView: View {
             room.isEmpty ? "Recording" : "Recording · \(room)"
         case .watching(let room):
             room.isEmpty ? "Watching" : "Watching · \(room)"
+        case .blocked:
+            "Access denied · checking daily"
+        case .notFound:
+            "Not found · checking daily"
         case .waiting:
             "Waiting for recorder"
         case .disabled(let reason):

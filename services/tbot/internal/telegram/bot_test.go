@@ -89,6 +89,7 @@ func newTestBot(t *testing.T) (*Bot, *fakeAPI, *store.Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	b.checkTimeout = 10 * time.Millisecond // recorder в тестах не запущен
 	return b, api, db
 }
 
@@ -128,10 +129,10 @@ func TestAddDelList(t *testing.T) {
 	b.handleList(ctx, nil, message(ownerID, "/list"))
 
 	want := []string{
-		"User alice added.",
+		"User alice added, recorder has not checked it yet.",
 		"Error adding user: user already exists",
 		"Usage: /add <user or link>",
-		"User bob added.",
+		"User bob added, recorder has not checked it yet.",
 		"⏳ alice — waiting for recorder\n🔴 bob — recording (public)",
 		"User alice removed.",
 		"User bob removed.",
@@ -142,14 +143,53 @@ func TestAddDelList(t *testing.T) {
 	}
 }
 
+func TestAddReply(t *testing.T) {
+	cases := map[string]store.CheckResult{
+		"User u not found, not added.":                   {Outcome: store.CheckRejected},
+		"User u added (offline).":                        {Outcome: store.CheckWatching, RoomStatus: "offline"},
+		"User u added: access denied, checking daily.":   {Outcome: store.CheckBlocked},
+		"User u added: not found, checking daily.":       {Outcome: store.CheckNotFound},
+		"User u added but disabled: HTTP 400":            {Outcome: store.CheckDisabled, Reason: "HTTP 400"},
+		"User u added, recorder has not checked it yet.": {Outcome: store.CheckPending},
+	}
+	for want, res := range cases {
+		if got := addReply("u", res); got != want {
+			t.Errorf("addReply(%+v) = %q, want %q", res, got, want)
+		}
+	}
+}
+
+// /add отвечает после первой проверки recorder'ом; отклонённый не пересылается повторно.
+func TestAddWaitsForFirstCheck(t *testing.T) {
+	b, api, db := newTestBot(t)
+	b.checkTimeout = 3 * time.Second
+	ctx := context.Background()
+
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		_ = db.RemoveUser(ctx, "ghost")
+		_, _ = db.AddEvent(ctx, store.KindUserRejected, "ghost", "User ghost not found")
+	}()
+	b.handleAdd(ctx, nil, message(ownerID, "/add https://someadress.com/ghost"))
+
+	if got := api.sent(); !slices.Equal(got, []string{"User ghost not found, not added."}) {
+		t.Errorf("sent = %v", got)
+	}
+	if forwardKinds[store.KindUserRejected] {
+		t.Error("user_rejected must not be forwarded: the reply already says it")
+	}
+}
+
 func TestFormatEntry(t *testing.T) {
 	now := time.Now()
 	cases := map[string]store.Entry{
-		"⏸ a — disabled: HTTP 404":   {User: "a", DisabledReason: "HTTP 404"},
-		"👀 b — offline":              {User: "b", Enabled: true, RoomStatus: "offline", StateAt: now},
-		"👀 c — watching":             {User: "c", Enabled: true, StateAt: now},
-		"⏳ d — waiting for recorder": {User: "d", Enabled: true},
-		"🔴 e — recording (public)":   {User: "e", Enabled: true, Recording: true, RoomStatus: "public", StateAt: now},
+		"⏸ a — disabled: HTTP 404":            {User: "a", DisabledReason: "HTTP 404"},
+		"👀 b — offline":                       {User: "b", Enabled: true, RoomStatus: "offline", StateAt: now},
+		"👀 c — watching":                      {User: "c", Enabled: true, StateAt: now},
+		"⏳ d — waiting for recorder":          {User: "d", Enabled: true},
+		"🔴 e — recording (public)":            {User: "e", Enabled: true, Recording: true, RoomStatus: "public", StateAt: now},
+		"🚫 f — access denied, checking daily": {User: "f", Enabled: true, RoomStatus: store.RoomBlocked, StateAt: now},
+		"❓ g — not found, checking daily":     {User: "g", Enabled: true, RoomStatus: store.RoomNotFound, StateAt: now},
 	}
 	for want, e := range cases {
 		if got := formatEntry(e); got != want {
@@ -195,12 +235,13 @@ func TestForwardEvents(t *testing.T) {
 
 	_, _ = db.AddEvent(ctx, store.KindRecordingStarted, "x", "Recording x started")
 	_, _ = db.AddEvent(ctx, store.KindUserDisabled, "x", "User x disabled")
+	_, _ = db.AddEvent(ctx, store.KindUserRemoved, "y", "User y removed")
 	last, _ := db.AddEvent(ctx, store.KindRecordingFinished, "x", "Recording x finished")
 	waitCursor(func(id int64) bool { return id == last })
 	cancel()
 	<-done
 
-	if got := api.sent(); !slices.Equal(got, []string{"⚠️ User x disabled"}) {
+	if got := api.sent(); !slices.Equal(got, []string{"⚠️ User x disabled", "⚠️ User y removed"}) {
 		t.Errorf("sent = %v", got)
 	}
 }

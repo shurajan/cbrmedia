@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 
@@ -25,7 +26,8 @@ func watchlistApp(t *testing.T) (*fiber.App, *store.Store) {
 
 	app := fiber.New()
 	app.Get("/watchlist", listWatchlist(db))
-	app.Post("/watchlist", addToWatchlist(db))
+	// recorder в тестах не запущен: проверки не дожидаемся (check = pending).
+	app.Post("/watchlist", addToWatchlist(db, 10*time.Millisecond))
 	app.Delete("/watchlist/:user", removeFromWatchlist(db))
 	app.Get("/events", listEvents(db))
 	return app, db
@@ -63,7 +65,7 @@ func TestWatchlistEndpoints(t *testing.T) {
 	}
 	// Ссылка вместо имени: имя берётся из последнего сегмента пути и возвращается.
 	code, body := do(t, app, http.MethodPost, "/watchlist", `{"user":"https://someadress.com/female/bob/"}`)
-	if code != http.StatusCreated || !strings.Contains(body, `"user":"bob"`) {
+	if code != http.StatusCreated || !strings.Contains(body, `"user":"bob"`) || !strings.Contains(body, `"check":"pending"`) {
 		t.Fatalf("add by link: %d %s", code, body)
 	}
 	_ = db.RemoveUser(context.Background(), "bob")
@@ -88,6 +90,47 @@ func TestWatchlistEndpoints(t *testing.T) {
 	if _, body := do(t, app, http.MethodGet, "/watchlist", ""); strings.TrimSpace(body) != "[]" {
 		t.Fatalf("empty list = %s", body)
 	}
+}
+
+// POST /watchlist отвечает по итогу первой проверки recorder'ом.
+func TestAddWaitsForFirstCheck(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "cbr.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	app := fiber.New()
+	app.Post("/watchlist", addToWatchlist(db, 3*time.Second))
+	ctx := context.Background()
+
+	// Имитация recorder: ghost не найден и удалён, alice найдена.
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		_ = db.RemoveUser(ctx, "ghost")
+		_ = db.SetState(ctx, "alice", "offline", false)
+	}()
+
+	code, body := doTimeout(t, app, `{"user":"ghost"}`)
+	if code != http.StatusNotFound || !strings.Contains(body, "User ghost not found, not added") {
+		t.Errorf("ghost: %d %s", code, body)
+	}
+	code, body = doTimeout(t, app, `{"user":"alice"}`)
+	if code != http.StatusCreated || !strings.Contains(body, `"check":"watching"`) || !strings.Contains(body, `"roomStatus":"offline"`) {
+		t.Errorf("alice: %d %s", code, body)
+	}
+}
+
+func doTimeout(t *testing.T, app *fiber.App, body string) (int, string) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/watchlist", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req, fiber.TestConfig{Timeout: 5 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(b)
 }
 
 func TestEventsEndpoint(t *testing.T) {

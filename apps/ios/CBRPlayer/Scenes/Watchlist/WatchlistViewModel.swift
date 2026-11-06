@@ -19,6 +19,8 @@ final class WatchlistViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var isSubmitting = false
     @Published var newUser = ""
+    /// Кого сейчас добавляем: сервер отвечает после первой проверки recorder'ом (5–8 с).
+    @Published var checkingUser: String?
     @Published var entryToDelete: WatchEntryModel?
     @Published var showDeleteConfirmation = false
 
@@ -89,7 +91,12 @@ final class WatchlistViewModel: ObservableObject {
 
     func addNewUser(host: String, token: String) async {
         guard let user = resolvedNewUser else { return }
-        if await submit({ await self.service.add(user: user, host: host, token: token) }, host: host, token: token) {
+        let input = newUser
+        checkingUser = user
+        defer { checkingUser = nil }
+        // Ответ приходит через 5–8 с; если за это время в поле начали вводить другое — не стираем.
+        if await submit({ await self.service.add(user: user, host: host, token: token) }, host: host, token: token),
+           newUser == input {
             newUser = ""
         }
     }
@@ -105,7 +112,9 @@ final class WatchlistViewModel: ObservableObject {
         }
     }
 
-    /// Выполняет действие, по успеху перечитывает список. Возвращает true при успехе.
+    /// Выполняет действие и перечитывает список — и при ошибке: пока сервер ждал проверку
+    /// recorder'ом, фоновое обновление могло показать отклонённого пользователя.
+    /// Возвращает true при успехе.
     private func submit(_ action: () async -> Result<Void, Error>, host: String, token: String) async -> Bool {
         actionError = nil
         isSubmitting = true
@@ -117,6 +126,7 @@ final class WatchlistViewModel: ObservableObject {
             return true
         case .failure(let error):
             actionError = error.localizedDescription
+            await load(host: host, token: token, silent: true)
             return false
         }
     }

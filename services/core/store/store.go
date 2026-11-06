@@ -36,6 +36,17 @@ const (
 	KindRecordingFinished = "recording_finished"
 	KindRecordingFailed   = "recording_failed"
 	KindUserDisabled      = "user_disabled"
+	KindUserRemoved       = "user_removed"
+	// KindUserRejected — пользователь не найден при первой проверке и удалён.
+	// Добавивший узнаёт об этом сразу из ответа (WaitFirstCheck), поэтому tbot его не пересылает.
+	KindUserRejected = "user_rejected"
+)
+
+// room_status в watch_state, которые ставит сам recorder при ошибках status API.
+// Таких пользователей он проверяет раз в сутки.
+const (
+	RoomBlocked  = "blocked"   // доступ запрещён (401/403/451), обычно временная блокировка
+	RoomNotFound = "not found" // пользователь не найден (404/410); после 3 раз подряд удаляется
 )
 
 // userPattern — допустимое имя пользователя: оно попадает в URL status API и в имена файлов.
@@ -73,6 +84,10 @@ var migrations = []string{
 		consumer TEXT PRIMARY KEY,
 		event_id INTEGER NOT NULL
 	);`,
+	// verified — status API хоть раз ответил успешно, то есть пользователь существует.
+	// Уже добавленные к моменту миграции считаются подтверждёнными.
+	`ALTER TABLE watchlist ADD COLUMN verified INTEGER NOT NULL DEFAULT 0;
+	UPDATE watchlist SET verified = 1;`,
 }
 
 // Store — подключение к общей базе. Безопасен для конкурентного использования.
@@ -179,6 +194,29 @@ func (s *Store) RemoveUser(ctx context.Context, user string) error {
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrUserNotFound
+	}
+	return nil
+}
+
+// Verified сообщает, подтверждён ли пользователь: status API хоть раз ответил
+// о нём успешно. Для отсутствующего в списке — false.
+func (s *Store) Verified(ctx context.Context, user string) (bool, error) {
+	var verified bool
+	err := s.db.QueryRowContext(ctx, `SELECT verified FROM watchlist WHERE user = ?`, user).Scan(&verified)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("verified: %w", err)
+	}
+	return verified, nil
+}
+
+// MarkVerified отмечает пользователя подтверждённым (см. Verified).
+func (s *Store) MarkVerified(ctx context.Context, user string) error {
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE watchlist SET verified = 1 WHERE user = ? AND verified = 0`, user); err != nil {
+		return fmt.Errorf("mark verified: %w", err)
 	}
 	return nil
 }

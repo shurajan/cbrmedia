@@ -42,7 +42,13 @@ type Bot struct {
 	db            *store.Store
 	allowedUserID int64
 	log           *slog.Logger
+	// checkTimeout — сколько /add ждёт первую проверку пользователя recorder'ом.
+	checkTimeout time.Duration
 }
+
+// workers — обработчики обновлений: /add ждёт проверку до checkTimeout,
+// остальные команды в это время не должны стоять в очереди.
+const workers = 4
 
 // New подключается к Telegram (до 5 попыток с нарастающей паузой) и
 // регистрирует команды /add, /del, /list. Дополнительные опции передаются в
@@ -52,6 +58,7 @@ func New(ctx context.Context, cfg *config.Config, db *store.Store, log *slog.Log
 		db:            db,
 		allowedUserID: cfg.AllowedUserID,
 		log:           log,
+		checkTimeout:  store.FirstCheckTimeout,
 	}
 
 	httpClient, err := newHTTPClient(cfg.Proxy, log)
@@ -61,6 +68,7 @@ func New(ctx context.Context, cfg *config.Config, db *store.Store, log *slog.Log
 
 	options := append([]bot.Option{
 		bot.WithHTTPClient(time.Minute, httpClient),
+		bot.WithWorkers(workers),
 		bot.WithDefaultHandler(b.handleDefault),
 		bot.WithCallbackQueryDataHandler(callbackPrefix, bot.MatchTypePrefix, b.handleCallback),
 	}, opts...)
@@ -175,6 +183,7 @@ func (b *Bot) forwardBatch(ctx context.Context, cursor int64) int64 {
 // пишет, чтобы не засорять чат: они видны в /list и в GET /events у api.
 var forwardKinds = map[string]bool{
 	store.KindUserDisabled: true,
+	store.KindUserRemoved:  true,
 }
 
 func formatEvent(e store.Event) string {
@@ -251,7 +260,30 @@ func (b *Bot) handleAdd(ctx context.Context, _ *bot.Bot, update *models.Update) 
 		b.send(ctx, chatID, fmt.Sprintf("Error adding user: %v", err))
 		return
 	}
-	b.send(ctx, chatID, fmt.Sprintf("User %s added.", user))
+	// Отвечаем по итогу первой проверки recorder'ом (обычно 5–8 с).
+	res, err := b.db.WaitFirstCheck(ctx, user, b.checkTimeout)
+	if err != nil {
+		b.log.Warn("wait first check failed", "user", user, "err", err)
+	}
+	b.send(ctx, chatID, addReply(user, res))
+}
+
+// addReply — ответ на /add по итогу первой проверки.
+func addReply(user string, res store.CheckResult) string {
+	switch res.Outcome {
+	case store.CheckRejected:
+		return fmt.Sprintf("User %s not found, not added.", user)
+	case store.CheckWatching:
+		return fmt.Sprintf("User %s added (%s).", user, res.RoomStatus)
+	case store.CheckBlocked:
+		return fmt.Sprintf("User %s added: access denied, checking daily.", user)
+	case store.CheckNotFound:
+		return fmt.Sprintf("User %s added: not found, checking daily.", user)
+	case store.CheckDisabled:
+		return fmt.Sprintf("User %s added but disabled: %s", user, res.Reason)
+	default:
+		return fmt.Sprintf("User %s added, recorder has not checked it yet.", user)
+	}
 }
 
 func (b *Bot) handleDel(ctx context.Context, _ *bot.Bot, update *models.Update) {
@@ -320,6 +352,10 @@ func formatEntry(e store.Entry) string {
 		return fmt.Sprintf("🔴 %s — recording (%s)", e.User, e.RoomStatus)
 	case e.StateAt.IsZero():
 		return fmt.Sprintf("⏳ %s — waiting for recorder", e.User)
+	case e.RoomStatus == store.RoomBlocked:
+		return fmt.Sprintf("🚫 %s — access denied, checking daily", e.User)
+	case e.RoomStatus == store.RoomNotFound:
+		return fmt.Sprintf("❓ %s — not found, checking daily", e.User)
 	case e.RoomStatus == "":
 		return fmt.Sprintf("👀 %s — watching", e.User)
 	default:

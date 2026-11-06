@@ -6,7 +6,7 @@
 | Служба | Что делает | Пишет | Читает |
 |---|---|---|---|
 | [recorder](recorder/README.md) | опрашивает status API и записывает стримы | `recordings/`, состояние и события в базе | список слежения |
-| [tbot](tbot/README.md) | Telegram: `/add`, `/del`, `/list`, уведомление о выключенных пользователях | список слежения | состояние, события |
+| [tbot](tbot/README.md) | Telegram: `/add`, `/del`, `/list`, уведомления о выключенных и удалённых пользователях | список слежения | состояние, события |
 | [api](api/README.md) | HTTP API плеера: видео, список слежения, события | список слежения, удаляет видео | `media/`, база |
 | [converter](converter/README.md) | `recordings/` → HLS в `media/` (ffmpeg) | `media/` | `recordings/` |
 

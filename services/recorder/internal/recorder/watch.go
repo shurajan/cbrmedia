@@ -2,6 +2,7 @@ package recorder
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -12,7 +13,10 @@ import (
 
 // watch — цикл опроса одного пользователя. Когда у комнаты появляется
 // hls_source, стрим записывается до конца, затем опрос продолжается.
-// Ответ 4xx выключает пользователя в списке слежения (AddUser включит снова).
+// Ошибки status API разбирает classifyFailure: 404/410 и 401/403/451 переводят
+// на проверку раз в сутки (после notFoundLimit ответов 404/410 подряд пользователь
+// удаляется из списка слежения), прочие
+// 4xx выключают пользователя (AddUser включит снова), остальное — повтор позже.
 func (m *Manager) watch(ctx context.Context, user string, initialDelay time.Duration) {
 	log := m.log.With("user", user)
 
@@ -20,6 +24,10 @@ func (m *Manager) watch(ctx context.Context, user string, initialDelay time.Dura
 		return
 	}
 
+	// verified — status API хоть раз ответил о пользователе успешно (хранится в базе).
+	// Неподтверждённого 404/410 удаляет сразу: такого пользователя, скорее всего, нет вовсе.
+	verified := m.verified(ctx, user)
+	notFound := 0 // ответов 404/410 подряд
 	for {
 		if ctx.Err() != nil {
 			return
@@ -32,15 +40,35 @@ func (m *Manager) watch(ctx context.Context, user string, initialDelay time.Dura
 			}
 			log.Warn("status fetch failed", "status", status, "err", err)
 
-			if status >= http.StatusBadRequest && status < http.StatusInternalServerError {
+			var backoff time.Duration
+			switch classifyFailure(status) {
+			case actionNotFound:
+				if !verified {
+					m.reject(ctx, user, status)
+					return
+				}
+				notFound++
+				if notFound >= notFoundLimit {
+					m.remove(ctx, user, status, notFound)
+					return
+				}
+				backoff = m.timing.dailyDelay
+				m.setState(ctx, user, store.RoomNotFound, false)
+				log.Warn("user not found, checking again later", "status", status,
+					"attempt", notFound, "limit", notFoundLimit, "backoff", backoff)
+			case actionDisable:
 				m.disable(ctx, user, status)
 				return
-			}
-
-			backoff := m.timing.otherFailure
-			if status >= http.StatusInternalServerError || status == 0 {
-				backoff = m.timing.techFailure
-				log.Warn("technical failure, backing off", "status", status, "backoff", backoff)
+			case actionBlocked:
+				backoff = m.timing.dailyDelay
+				m.setState(ctx, user, store.RoomBlocked, false)
+				log.Warn("access denied, checking again later", "status", status, "backoff", backoff)
+			default:
+				backoff = m.timing.otherFailure
+				if status >= http.StatusInternalServerError || status == 0 || status == http.StatusTooManyRequests {
+					backoff = m.timing.techFailure
+					log.Warn("technical failure, backing off", "status", status, "backoff", backoff)
+				}
 			}
 			if ctxutil.Sleep(ctx, backoff) {
 				return
@@ -48,6 +76,10 @@ func (m *Manager) watch(ctx context.Context, user string, initialDelay time.Dura
 			continue
 		}
 
+		notFound = 0
+		if !verified {
+			verified = m.markVerified(ctx, user)
+		}
 		log.Info("room status", "status", room.Status)
 		m.setState(ctx, user, room.Status, false)
 
@@ -64,7 +96,53 @@ func (m *Manager) watch(ctx context.Context, user string, initialDelay time.Dura
 	}
 }
 
-// disable выключает пользователя после ответа 4xx и сообщает об этом.
+// verified читает из базы, подтверждён ли пользователь. При ошибке чтения
+// считает подтверждённым, чтобы не удалить существующего пользователя по ошибке.
+func (m *Manager) verified(ctx context.Context, user string) bool {
+	ok, err := m.sink.Verified(ctx, user)
+	if err != nil {
+		m.log.Warn("read verified failed", "user", user, "err", err)
+		return true
+	}
+	return ok
+}
+
+// markVerified отмечает пользователя подтверждённым. Возвращает false, если
+// записать не удалось (попробуем при следующем успешном ответе).
+func (m *Manager) markVerified(ctx context.Context, user string) bool {
+	if err := m.sink.MarkVerified(ctx, user); err != nil {
+		m.log.Warn("mark verified failed", "user", user, "err", err)
+		return false
+	}
+	return true
+}
+
+// reject удаляет только что добавленного пользователя, которого status API не знает
+// (404/410 до первого успешного ответа), и сообщает об этом.
+func (m *Manager) reject(ctx context.Context, user string, status int) {
+	m.removeUser(ctx, user)
+	m.event(ctx, store.KindUserRejected, user,
+		fmt.Sprintf("User %s not found (status API returned HTTP %d), not added.", user, status))
+	m.log.Warn("user not found, rejected", "user", user, "status", status)
+}
+
+func (m *Manager) removeUser(ctx context.Context, user string) {
+	sctx, cancel := sinkCtx(ctx)
+	defer cancel()
+	if err := m.sink.RemoveUser(sctx, user); err != nil && !errors.Is(err, store.ErrUserNotFound) {
+		m.log.Error("remove user failed", "user", user, "err", err)
+	}
+}
+
+// remove убирает из списка слежения пользователя, которого нет (404/410 attempts раз подряд), и сообщает об этом.
+func (m *Manager) remove(ctx context.Context, user string, status, attempts int) {
+	m.removeUser(ctx, user)
+	m.event(ctx, store.KindUserRemoved, user,
+		fmt.Sprintf("User %s removed: status API returned HTTP %d (user not found) %d times in a row.", user, status, attempts))
+	m.log.Warn("user removed", "user", user, "status", status)
+}
+
+// disable выключает пользователя после прочих ответов 4xx и сообщает об этом.
 func (m *Manager) disable(ctx context.Context, user string, status int) {
 	reason := fmt.Sprintf("status API returned HTTP %d", status)
 

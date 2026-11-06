@@ -56,7 +56,7 @@ func New(cfg Config, authSvc *auth.Service, db *store.Store, log *slog.Logger) *
 	app.Get("/videos/:videoname/*", streamFile(cfg.MediaDir))
 	app.Delete("/videos/:videoname", deleteVideo(cfg.MediaDir, log))
 	app.Get("/watchlist", listWatchlist(db))
-	app.Post("/watchlist", addToWatchlist(db))
+	app.Post("/watchlist", addToWatchlist(db, store.FirstCheckTimeout))
 	app.Delete("/watchlist/:user", removeFromWatchlist(db))
 	app.Get("/events", listEvents(db))
 

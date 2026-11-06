@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"sync"
@@ -163,5 +164,64 @@ func TestConcurrentProcesses(t *testing.T) {
 
 	if id, _ := b.LastEventID(ctx); id != 50 {
 		t.Fatalf("LastEventID via second connection = %d, want 50", id)
+	}
+}
+
+func TestVerified(t *testing.T) {
+	ctx := context.Background()
+	s, _ := openTest(t)
+	_ = s.AddUser(ctx, "alice", "api")
+
+	if ok, err := s.Verified(ctx, "alice"); err != nil || ok {
+		t.Fatalf("new user verified = %v, %v", ok, err)
+	}
+	if err := s.MarkVerified(ctx, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := s.Verified(ctx, "alice"); !ok {
+		t.Fatal("verified not saved")
+	}
+	// Выключение и повторное включение подтверждение не сбрасывают.
+	_ = s.DisableUser(ctx, "alice", "HTTP 400")
+	_ = s.AddUser(ctx, "alice", "api")
+	if ok, _ := s.Verified(ctx, "alice"); !ok {
+		t.Fatal("re-enable reset verified")
+	}
+	if ok, err := s.Verified(ctx, "nobody"); err != nil || ok {
+		t.Fatalf("missing user verified = %v, %v", ok, err)
+	}
+}
+
+// Пользователи, добавленные до появления verified, считаются подтверждёнными.
+func TestMigrationMarksExistingUsersVerified(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "cbr.db")
+
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		migrations[0],
+		`PRAGMA user_version = 1`,
+		`INSERT INTO watchlist (user, added_at) VALUES ('old', 0)`,
+	} {
+		if _, err := db.ExecContext(ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = db.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if ok, err := s.Verified(ctx, "old"); err != nil || !ok {
+		t.Fatalf("old user verified = %v, %v", ok, err)
+	}
+	_ = s.AddUser(ctx, "new", "api")
+	if ok, _ := s.Verified(ctx, "new"); ok {
+		t.Fatal("new user must not be verified")
 	}
 }

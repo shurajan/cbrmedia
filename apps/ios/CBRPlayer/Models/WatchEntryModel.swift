@@ -24,15 +24,28 @@ struct WatchEntryModel: Identifiable, Equatable, Codable {
     enum Status: Equatable {
         case recording(roomStatus: String)
         case watching(roomStatus: String)
+        /// Status API отказывает в доступе (401/403) — recorder проверяет раз в сутки.
+        case blocked
+        /// Status API не находит пользователя (404/410) — проверка раз в сутки, после 3 раз подряд удаление.
+        case notFound
         case waiting
         case disabled(reason: String)
     }
+
+    /// Значения roomStatus, которые ставит recorder при ошибках status API
+    /// (Go `store.RoomBlocked`, `store.RoomNotFound`).
+    static let roomBlocked = "blocked"
+    static let roomNotFound = "not found"
 
     var status: Status {
         if !enabled { return .disabled(reason: disabledReason ?? "") }
         if recording { return .recording(roomStatus: roomStatus ?? "") }
         if (updatedAt ?? "").isEmpty { return .waiting }
-        return .watching(roomStatus: roomStatus ?? "")
+        switch roomStatus {
+        case Self.roomBlocked: return .blocked
+        case Self.roomNotFound: return .notFound
+        default: return .watching(roomStatus: roomStatus ?? "")
+        }
     }
 
     // ISO8601DateFormatter is documented as thread-safe

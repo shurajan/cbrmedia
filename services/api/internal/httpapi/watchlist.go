@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -74,7 +75,11 @@ func listWatchlist(db *store.Store) fiber.Handler {
 // addToWatchlist — POST /watchlist {"user": "..."}: добавить или снова включить.
 // В user можно передать ссылку на страницу пользователя — имя берётся из неё
 // (store.UserFromInput) и возвращается в ответе.
-func addToWatchlist(db *store.Store) fiber.Handler {
+//
+// Ответ приходит после первой проверки пользователя recorder'ом (обычно 5–8 с,
+// не дольше checkTimeout): 201 с итогом в "check" или 404, если пользователь не
+// найден и recorder его удалил.
+func addToWatchlist(db *store.Store, checkTimeout time.Duration) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		var req struct {
 			User string `json:"user"`
@@ -95,8 +100,32 @@ func addToWatchlist(db *store.Store) fiber.Handler {
 		case err != nil:
 			return jsonError(c, fiber.StatusInternalServerError, err.Error())
 		}
-		return c.Status(fiber.StatusCreated).JSON(fiber.Map{"message": "added", "user": user})
+
+		res, err := db.WaitFirstCheck(c.Context(), user, checkTimeout)
+		if err != nil {
+			return jsonError(c, fiber.StatusInternalServerError, err.Error())
+		}
+		if res.Outcome == store.CheckRejected {
+			return jsonError(c, fiber.StatusNotFound, fmt.Sprintf("User %s not found, not added", user))
+		}
+		resp := fiber.Map{"message": "added", "user": user, "check": checkNames[res.Outcome]}
+		if res.RoomStatus != "" {
+			resp["roomStatus"] = res.RoomStatus
+		}
+		if res.Reason != "" {
+			resp["reason"] = res.Reason
+		}
+		return c.Status(fiber.StatusCreated).JSON(resp)
 	}
+}
+
+// checkNames — значения поля "check" в ответе POST /watchlist.
+var checkNames = map[store.CheckOutcome]string{
+	store.CheckPending:  "pending",
+	store.CheckWatching: "watching",
+	store.CheckBlocked:  "blocked",
+	store.CheckNotFound: "not_found",
+	store.CheckDisabled: "disabled",
 }
 
 // removeFromWatchlist — DELETE /watchlist/:user.

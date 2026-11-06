@@ -9,6 +9,9 @@ final class FakeWatchlistService: WatchlistServiceProtocol {
     var failNext: String?
     private(set) var added: [String] = []
     private(set) var removed: [String] = []
+    /// Вызывается во время add — имитирует действия пользователя, пока сервер ждёт проверку.
+    var onAdd: ((WatchlistViewModel) -> Void)?
+    weak var viewModel: WatchlistViewModel?
 
     private func failure() -> NetworkServiceError? {
         defer { failNext = nil }
@@ -23,6 +26,7 @@ final class FakeWatchlistService: WatchlistServiceProtocol {
     func add(user: String, host: String, token: String) async -> Result<Void, Error> {
         if let error = failure() { return .failure(error) }
         added.append(user)
+        if let viewModel { onAdd?(viewModel) }
         entries.removeAll { $0.user == user }
         entries.append(.make(user))
         return .success(())
@@ -63,6 +67,8 @@ struct WatchEntryModelTests {
     @Test func statusMapping() {
         #expect(WatchEntryModel.make("a").status == .waiting)
         #expect(WatchEntryModel.make("a", room: "offline", updatedAt: "x").status == .watching(roomStatus: "offline"))
+        #expect(WatchEntryModel.make("a", room: "blocked", updatedAt: "x").status == .blocked)
+        #expect(WatchEntryModel.make("a", room: "not found", updatedAt: "x").status == .notFound)
         // Выключенный важнее остального состояния.
         #expect(WatchEntryModel.make("a", enabled: false, reason: "r", recording: true).status == .disabled(reason: "r"))
     }
@@ -126,12 +132,42 @@ struct WatchlistViewModelTests {
 
         #expect(service.added == ["bob"])
         #expect(vm.newUser.isEmpty)
+        #expect(vm.checkingUser == nil)
     }
 
     @Test func plainNameHasNoLinkHint() {
         let vm = WatchlistViewModel(service: FakeWatchlistService())
         vm.newUser = "alice"
         #expect(vm.linkHint == nil)
+    }
+
+    /// Отклонённый пользователь, которого фоновое обновление успело показать, исчезает сразу.
+    @Test func rejectedAddReloadsList() async {
+        let service = FakeWatchlistService()
+        let vm = WatchlistViewModel(service: service)
+        vm.entries = [.make("ghost")] // показан фоновым обновлением во время проверки
+        service.failNext = "User ghost not found, not added"
+        vm.newUser = "ghost"
+
+        await vm.addNewUser(host: "h", token: "t")
+
+        #expect(vm.actionError == "User ghost not found, not added")
+        #expect(vm.entries.isEmpty)
+        #expect(vm.newUser == "ghost")
+    }
+
+    /// Текст, введённый пока шла проверка, не стирается успешным ответом.
+    @Test func addKeepsTextTypedDuringCheck() async {
+        let service = FakeWatchlistService()
+        service.onAdd = { vm in vm.newUser = "next" }
+        let vm = WatchlistViewModel(service: service)
+        service.viewModel = vm
+        vm.newUser = "alice"
+
+        await vm.addNewUser(host: "h", token: "t")
+
+        #expect(service.added == ["alice"])
+        #expect(vm.newUser == "next")
     }
 
     @Test func blankInputCannotBeAdded() {

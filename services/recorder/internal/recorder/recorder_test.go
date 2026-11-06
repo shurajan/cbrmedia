@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -27,6 +28,7 @@ var fastTiming = timing{
 	publicDelay:    5 * time.Millisecond,
 	activeDelay:    5 * time.Millisecond,
 	offlineDelay:   5 * time.Millisecond,
+	dailyDelay:     5 * time.Millisecond,
 }
 
 // fakeStatus отдаёт ответы по очереди; после конца очереди повторяет последний.
@@ -79,18 +81,54 @@ type fakeSink struct {
 	mu       sync.Mutex
 	events   []store.Event
 	disabled map[string]string
-	states   map[string]bool // user -> recording
+	removed  []string
+	states   map[string]bool   // user -> recording
+	rooms    map[string]string // user -> последний room_status
+	verified map[string]bool
 }
 
 func newFakeSink() *fakeSink {
-	return &fakeSink{disabled: map[string]string{}, states: map[string]bool{}}
+	return &fakeSink{disabled: map[string]string{}, states: map[string]bool{}, rooms: map[string]string{}, verified: map[string]bool{}}
 }
 
-func (f *fakeSink) SetState(_ context.Context, user, _ string, recording bool) error {
+func (f *fakeSink) SetState(_ context.Context, user, roomStatus string, recording bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.states[user] = recording
+	f.rooms[user] = roomStatus
 	return nil
+}
+
+func (f *fakeSink) RemoveUser(_ context.Context, user string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.removed = append(f.removed, user)
+	return nil
+}
+
+func (f *fakeSink) Verified(_ context.Context, user string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.verified[user], nil
+}
+
+func (f *fakeSink) MarkVerified(_ context.Context, user string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.verified[user] = true
+	return nil
+}
+
+func (f *fakeSink) isVerified(user string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.verified[user]
+}
+
+func (f *fakeSink) room(user string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.rooms[user]
 }
 
 func (f *fakeSink) ClearState(_ context.Context, user string) error {
@@ -142,8 +180,143 @@ func waitFor(t *testing.T, cond func() bool) {
 	}
 }
 
-func TestWatchClientErrorDisablesUser(t *testing.T) {
+func TestWatchNotFoundRemovesUserAfterLimit(t *testing.T) {
+	for _, code := range []int{404, 410} {
+		status := &fakeStatus{responses: []statusResponse{{status: code, err: errors.New("not found")}}}
+		m, sink := newTestManager(status, &fakeRecorder{})
+		sink.verified["alice"] = true // пользователь уже отвечал успешно
+
+		ctx, cancel := context.WithCancel(context.Background())
+		m.Sync(ctx, []string{"alice"})
+		waitFor(t, func() bool { return !m.Watching("alice") })
+		cancel()
+		m.Wait()
+
+		if calls := status.calls; calls != notFoundLimit {
+			t.Errorf("HTTP %d: status calls = %d, want %d", code, calls, notFoundLimit)
+		}
+		if !slices.Equal(sink.removed, []string{"alice"}) || len(sink.disabled) != 0 {
+			t.Errorf("HTTP %d: removed = %v, disabled = %v", code, sink.removed, sink.disabled)
+		}
+		if kinds := sink.kinds(); len(kinds) != 1 || kinds[0] != store.KindUserRemoved {
+			t.Errorf("HTTP %d: events = %v", code, kinds)
+		}
+	}
+}
+
+// Неподтверждённый пользователь (ещё ни одного успешного ответа) на 404 удаляется сразу.
+func TestWatchNotFoundRejectsUnverifiedUser(t *testing.T) {
 	status := &fakeStatus{responses: []statusResponse{{status: 404, err: errors.New("not found")}}}
+	m, sink := newTestManager(status, &fakeRecorder{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	m.Sync(ctx, []string{"ghost"})
+	waitFor(t, func() bool { return !m.Watching("ghost") })
+	cancel()
+	m.Wait()
+
+	if status.calls != 1 || !slices.Equal(sink.removed, []string{"ghost"}) {
+		t.Errorf("calls = %d, removed = %v", status.calls, sink.removed)
+	}
+	if len(sink.events) != 1 || sink.events[0].Kind != store.KindUserRejected ||
+		!strings.Contains(sink.events[0].Message, "not added") {
+		t.Errorf("events = %+v", sink.events)
+	}
+}
+
+// Первый успешный ответ подтверждает пользователя, после этого 404 считаются по счётчику.
+func TestWatchSuccessMarksVerified(t *testing.T) {
+	nf := statusResponse{status: 404, err: errors.New("not found")}
+	ok := statusResponse{room: Room{Status: "offline"}, status: 200}
+	status := &fakeStatus{responses: []statusResponse{ok, nf}}
+	m, sink := newTestManager(status, &fakeRecorder{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	m.Sync(ctx, []string{"alice"})
+	waitFor(t, func() bool { return !m.Watching("alice") })
+	cancel()
+	m.Wait()
+
+	if !sink.isVerified("alice") || status.calls != 1+notFoundLimit {
+		t.Errorf("verified = %v, calls = %d", sink.isVerified("alice"), status.calls)
+	}
+}
+
+// Успешный ответ между 404 сбрасывает счётчик: удаление только после notFoundLimit подряд.
+func TestWatchNotFoundCounterResetsOnSuccess(t *testing.T) {
+	nf := statusResponse{status: 404, err: errors.New("not found")}
+	ok := statusResponse{room: Room{Status: "offline"}, status: 200}
+	status := &fakeStatus{responses: []statusResponse{nf, nf, ok, nf, nf, nf}}
+	m, sink := newTestManager(status, &fakeRecorder{})
+	sink.verified["alice"] = true // пользователь уже отвечал успешно
+
+	ctx, cancel := context.WithCancel(context.Background())
+	m.Sync(ctx, []string{"alice"})
+	waitFor(t, func() bool { return !m.Watching("alice") })
+	cancel()
+	m.Wait()
+
+	if status.calls != 6 || !slices.Equal(sink.removed, []string{"alice"}) {
+		t.Errorf("calls = %d, removed = %v", status.calls, sink.removed)
+	}
+}
+
+func TestWatchNotFoundKeepsWatchingWithState(t *testing.T) {
+	status := &fakeStatus{responses: []statusResponse{{status: 404, err: errors.New("not found")}}}
+	m, sink := newTestManager(status, &fakeRecorder{})
+	sink.verified["alice"] = true // пользователь уже отвечал успешно
+	m.timing.dailyDelay = time.Hour
+
+	ctx, cancel := context.WithCancel(context.Background())
+	m.Sync(ctx, []string{"alice"})
+	waitFor(t, func() bool { return sink.room("alice") == store.RoomNotFound })
+	if !m.Watching("alice") || len(sink.removed) != 0 || len(sink.kinds()) != 0 {
+		t.Errorf("watching = %v, removed = %v, events = %v", m.Watching("alice"), sink.removed, sink.kinds())
+	}
+	cancel()
+	m.Wait()
+}
+
+func TestWatchAccessDeniedKeepsWatchingWithBlockedState(t *testing.T) {
+	status := &fakeStatus{responses: []statusResponse{
+		{status: 401, err: errors.New("unauthorized")},
+		{room: Room{Status: "offline"}, status: 200},
+	}}
+	m, sink := newTestManager(status, &fakeRecorder{})
+	m.timing.dailyDelay = 50 * time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m.Sync(ctx, []string{"alice"})
+
+	waitFor(t, func() bool { return sink.room("alice") == store.RoomBlocked })
+	if !m.Watching("alice") {
+		t.Fatal("blocked user must stay watched")
+	}
+	// После паузы опрос продолжается, и состояние обновляется.
+	waitFor(t, func() bool { return sink.room("alice") == "offline" })
+	cancel()
+	m.Wait()
+
+	if len(sink.removed) != 0 || len(sink.disabled) != 0 || len(sink.kinds()) != 0 {
+		t.Errorf("removed = %v, disabled = %v, events = %v", sink.removed, sink.disabled, sink.kinds())
+	}
+}
+
+func TestClassifyFailure(t *testing.T) {
+	cases := map[int]failureAction{
+		0: actionRetry, 400: actionDisable, 401: actionBlocked, 403: actionBlocked, 404: actionNotFound,
+		410: actionNotFound, 422: actionDisable, 429: actionRetry, 451: actionBlocked, 500: actionRetry, 503: actionRetry,
+	}
+	for code, want := range cases {
+		if got := classifyFailure(code); got != want {
+			t.Errorf("classifyFailure(%d) = %d, want %d", code, got, want)
+		}
+	}
+}
+
+func TestWatchClientErrorDisablesUser(t *testing.T) {
+	status := &fakeStatus{responses: []statusResponse{{status: 400, err: errors.New("bad request")}}}
 	m, sink := newTestManager(status, &fakeRecorder{})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -154,7 +327,7 @@ func TestWatchClientErrorDisablesUser(t *testing.T) {
 	cancel()
 	m.Wait()
 
-	if reason := sink.disabled["alice"]; reason != "status API returned HTTP 404" {
+	if reason := sink.disabled["alice"]; reason != "status API returned HTTP 400" {
 		t.Errorf("disable reason = %q", reason)
 	}
 	if kinds := sink.kinds(); len(kinds) != 1 || kinds[0] != store.KindUserDisabled {

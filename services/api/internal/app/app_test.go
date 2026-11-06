@@ -15,6 +15,7 @@ import (
 
 	"cbr/api/internal/auth"
 	"cbr/core/home"
+	"cbr/core/store"
 )
 
 func freeAddr(t *testing.T) string {
@@ -82,6 +83,15 @@ func TestRunEndToEnd(t *testing.T) {
 	if resp.StatusCode != http.StatusOK || strings.TrimSpace(string(b)) != "[]" {
 		t.Errorf("GET /videos = %d %s", resp.StatusCode, b)
 	}
+
+	// Имитация recorder: POST /watchlist ждёт первую проверку пользователя —
+	// состояние записано заранее, поэтому ответ приходит сразу.
+	db, err := store.Open(layout.DBFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = db.SetState(context.Background(), "alice", "offline", false)
+	_ = db.Close()
 
 	req, _ = http.NewRequest(http.MethodPost, "http://"+addr+"/watchlist", strings.NewReader(`{"user":"alice"}`))
 	req.Header.Set("Authorization", "Bearer "+token)
