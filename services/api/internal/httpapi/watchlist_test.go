@@ -55,15 +55,21 @@ func TestWatchlistEndpoints(t *testing.T) {
 	if code, _ := do(t, app, http.MethodPost, "/watchlist", `{"user":"alice"}`); code != http.StatusConflict {
 		t.Fatalf("duplicate add: %d", code)
 	}
-	if code, _ := do(t, app, http.MethodPost, "/watchlist", `{"user":"../x"}`); code != http.StatusBadRequest {
+	if code, _ := do(t, app, http.MethodPost, "/watchlist", `{"user":"bad name"}`); code != http.StatusBadRequest {
 		t.Fatalf("invalid add: %d", code)
 	}
 	if code, _ := do(t, app, http.MethodPost, "/watchlist", `{`); code != http.StatusBadRequest {
 		t.Fatalf("bad json: %d", code)
 	}
+	// Ссылка вместо имени: имя берётся из последнего сегмента пути и возвращается.
+	code, body := do(t, app, http.MethodPost, "/watchlist", `{"user":"https://someadress.com/female/bob/"}`)
+	if code != http.StatusCreated || !strings.Contains(body, `"user":"bob"`) {
+		t.Fatalf("add by link: %d %s", code, body)
+	}
+	_ = db.RemoveUser(context.Background(), "bob")
 
 	_ = db.SetState(context.Background(), "alice", "public", true)
-	code, body := do(t, app, http.MethodGet, "/watchlist", "")
+	code, body = do(t, app, http.MethodGet, "/watchlist", "")
 	var items []WatchEntry
 	if err := json.Unmarshal([]byte(body), &items); err != nil || code != http.StatusOK {
 		t.Fatalf("list: %d %s", code, body)

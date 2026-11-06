@@ -120,21 +120,21 @@ func TestAddDelList(t *testing.T) {
 	b.handleAdd(ctx, nil, message(ownerID, "/add alice"))
 	b.handleAdd(ctx, nil, message(ownerID, "/add alice"))
 	b.handleAdd(ctx, nil, message(ownerID, "/add"))
-	b.handleAdd(ctx, nil, message(ownerID, "/add bob"))
+	b.handleAdd(ctx, nil, message(ownerID, "/add https://someadress.com/female/bob/"))
 	_ = db.SetState(ctx, "bob", "public", true)
 	b.handleList(ctx, nil, message(ownerID, "/list"))
 	b.handleDel(ctx, nil, message(ownerID, "/del alice"))
-	b.handleDel(ctx, nil, message(ownerID, "/del bob"))
+	b.handleDel(ctx, nil, message(ownerID, "/del https://someadress.com/bob"))
 	b.handleList(ctx, nil, message(ownerID, "/list"))
 
 	want := []string{
-		"User added successfully.",
+		"User alice added.",
 		"Error adding user: user already exists",
-		"Usage: /add <user>",
-		"User added successfully.",
+		"Usage: /add <user or link>",
+		"User bob added.",
 		"⏳ alice — waiting for recorder\n🔴 bob — recording (public)",
-		"User removed successfully.",
-		"User removed successfully.",
+		"User alice removed.",
+		"User bob removed.",
 		"No users found.",
 	}
 	if got := api.sent(); !slices.Equal(got, want) {

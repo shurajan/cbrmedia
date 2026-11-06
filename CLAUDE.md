@@ -26,7 +26,8 @@ CBRPlayer ──HTTP :8000 (Bearer)──▶ api ──▶ ~/.cbr/media
   — Go: `services/api/internal/httpapi/videos.go` `MediaFile`; Swift: `Models/VideoItemModel.swift`
 - `GET /videos/:name/*` — файлы HLS; `DELETE /videos/:name`
 - `GET/POST /watchlist`, `DELETE /watchlist/:user` — вкладка «Watchlist» в iOS
-  (Go `WatchEntry` в `watchlist.go` ↔ Swift `Models/WatchEntryModel.swift`)
+  (Go `WatchEntry` в `watchlist.go` ↔ Swift `Models/WatchEntryModel.swift`). `POST` и `/add` в tbot принимают имя
+  или ссылку на страницу, сохраняется только имя (Go `store.UserFromInput` ↔ Swift `WatchlistViewModel.userName(from:)`)
 - `GET /events?after=` — пока не используется клиентами; полная таблица — `services/api/README.md`
 - Всё, кроме `/auth`, требует `Authorization: Bearer <token>`. Транспорт — plain HTTP (`http://host:port`).
 

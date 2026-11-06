@@ -36,7 +36,30 @@ final class WatchlistViewModel: ObservableObject {
         newUser.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    var canAdd: Bool { !trimmedNewUser.isEmpty && !isSubmitting }
+    /// Имя, которое будет добавлено: из поля ввода или из вставленной ссылки.
+    var resolvedNewUser: String? { Self.userName(from: newUser) }
+
+    /// Ввод — ссылка, и из неё удалось достать имя: показываем, кого добавим.
+    var linkHint: String? {
+        guard let user = resolvedNewUser, user != trimmedNewUser else { return nil }
+        return user
+    }
+
+    var canAdd: Bool { resolvedNewUser != nil && !isSubmitting }
+
+    /// Имя пользователя из ввода: имя как есть или ссылка на его страницу, где имя —
+    /// последний непустой сегмент пути (`https://site/<user>`, `https://site/<раздел>/<user>/`).
+    /// Схема необязательна, query и fragment отбрасываются. Те же правила —
+    /// `store.UserFromInput` в services/core; допустимость имени проверяет сервер.
+    static func userName(from input: String) -> String? {
+        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        guard text.contains("/") else { return text }
+
+        let link = text.contains("://") ? text : "https://" + text
+        guard let path = URLComponents(string: link)?.path else { return nil }
+        return path.split(separator: "/").last.map(String.init)
+    }
 
     /// Загружает список. `silent` — без индикатора загрузки (фоновое обновление статусов).
     func load(host: String, token: String, silent: Bool = false) async {
@@ -65,8 +88,7 @@ final class WatchlistViewModel: ObservableObject {
     }
 
     func addNewUser(host: String, token: String) async {
-        let user = trimmedNewUser
-        guard !user.isEmpty else { return }
+        guard let user = resolvedNewUser else { return }
         if await submit({ await self.service.add(user: user, host: host, token: token) }, host: host, token: token) {
             newUser = ""
         }

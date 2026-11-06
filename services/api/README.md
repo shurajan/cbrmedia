@@ -14,7 +14,7 @@ HTTP API для плеера CBRPlayer: авторизация по паролю
 | `GET /videos/:name/*` | файлы HLS (`playlist.m3u8`, `.ts`, `.m4s`, `init.mp4`…) |
 | `DELETE /videos/:name` | удалить видео целиком |
 | `GET /watchlist` | `[{user, addedAt, addedBy, enabled, disabledReason?, roomStatus?, recording, updatedAt?}]` |
-| `POST /watchlist` `{"user"}` | 201; 409 если уже есть; 400 при недопустимом имени. Выключенного включает снова |
+| `POST /watchlist` `{"user"}` | 201 `{message, user}`; 409 если уже есть; 400 при недопустимом имени. Выключенного включает снова. В `user` можно передать ссылку на страницу — сохраняется только имя (последний сегмент пути) |
 | `DELETE /watchlist/:user` | 200; 404 если нет |
 | `GET /events?after=ID&limit=N` | `[{id, at, kind, user?, message}]` с `id > after`, `limit` по умолчанию 100, максимум 500 |
 

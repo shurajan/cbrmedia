@@ -18,6 +18,14 @@ struct WatchlistView: View {
             addField
                 .padding(.horizontal)
 
+            if let user = viewModel.linkHint, viewModel.actionError == nil {
+                Text("Will add: \(user)")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+            }
+
             if let error = viewModel.actionError {
                 Text(error)
                     .font(.subheadline)
@@ -67,9 +75,10 @@ private extension WatchlistView {
             HStack(spacing: 8) {
                 Image(systemName: "person.badge.plus")
                     .foregroundStyle(Theme.textSecondary)
-                TextField("Add user to watch", text: $viewModel.newUser)
+                TextField("User name or link", text: $viewModel.newUser)
                     .autocorrectionDisabled(true)
                     .textInputAutocapitalization(.never)
+                    .keyboardType(.URL)
                     .submitLabel(.done)
                     .onSubmit { Task { await add() } }
             }

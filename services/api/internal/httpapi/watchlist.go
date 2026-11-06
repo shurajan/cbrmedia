@@ -72,6 +72,8 @@ func listWatchlist(db *store.Store) fiber.Handler {
 }
 
 // addToWatchlist — POST /watchlist {"user": "..."}: добавить или снова включить.
+// В user можно передать ссылку на страницу пользователя — имя берётся из неё
+// (store.UserFromInput) и возвращается в ответе.
 func addToWatchlist(db *store.Store) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		var req struct {
@@ -81,7 +83,10 @@ func addToWatchlist(db *store.Store) fiber.Handler {
 			return jsonError(c, fiber.StatusBadRequest, "invalid json")
 		}
 
-		err := db.AddUser(c.Context(), req.User, AddedBy)
+		user, err := store.UserFromInput(req.User)
+		if err == nil {
+			err = db.AddUser(c.Context(), user, AddedBy)
+		}
 		switch {
 		case errors.Is(err, store.ErrInvalidUser):
 			return jsonError(c, fiber.StatusBadRequest, err.Error())
@@ -90,7 +95,7 @@ func addToWatchlist(db *store.Store) fiber.Handler {
 		case err != nil:
 			return jsonError(c, fiber.StatusInternalServerError, err.Error())
 		}
-		return c.Status(fiber.StatusCreated).JSON(fiber.Map{"message": "added"})
+		return c.Status(fiber.StatusCreated).JSON(fiber.Map{"message": "added", "user": user})
 	}
 }
 

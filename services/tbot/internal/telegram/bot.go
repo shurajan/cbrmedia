@@ -236,17 +236,22 @@ func (b *Bot) handleAdd(ctx context.Context, _ *bot.Bot, update *models.Update) 
 	}
 	chatID := update.Message.Chat.ID
 
-	user := commandArgs(update.Message.Text, "/add")
-	if user == "" {
-		b.send(ctx, chatID, "Usage: /add <user>")
+	input := commandArgs(update.Message.Text, "/add")
+	if input == "" {
+		b.send(ctx, chatID, "Usage: /add <user or link>")
 		return
 	}
 
-	if err := b.db.AddUser(ctx, user, AddedBy); err != nil {
+	// Вместо имени можно прислать ссылку на страницу пользователя.
+	user, err := store.UserFromInput(input)
+	if err == nil {
+		err = b.db.AddUser(ctx, user, AddedBy)
+	}
+	if err != nil {
 		b.send(ctx, chatID, fmt.Sprintf("Error adding user: %v", err))
 		return
 	}
-	b.send(ctx, chatID, "User added successfully.")
+	b.send(ctx, chatID, fmt.Sprintf("User %s added.", user))
 }
 
 func (b *Bot) handleDel(ctx context.Context, _ *bot.Bot, update *models.Update) {
@@ -255,8 +260,8 @@ func (b *Bot) handleDel(ctx context.Context, _ *bot.Bot, update *models.Update) 
 	}
 	chatID := update.Message.Chat.ID
 
-	user := commandArgs(update.Message.Text, "/del")
-	if user == "" {
+	input := commandArgs(update.Message.Text, "/del")
+	if input == "" {
 		users, err := b.userNames(ctx)
 		if err != nil {
 			b.send(ctx, chatID, fmt.Sprintf("Error: %v", err))
@@ -270,11 +275,15 @@ func (b *Bot) handleDel(ctx context.Context, _ *bot.Bot, update *models.Update) 
 		return
 	}
 
-	if err := b.db.RemoveUser(ctx, user); err != nil {
+	user, err := store.UserFromInput(input)
+	if err == nil {
+		err = b.db.RemoveUser(ctx, user)
+	}
+	if err != nil {
 		b.send(ctx, chatID, fmt.Sprintf("Error removing user: %v", err))
 		return
 	}
-	b.send(ctx, chatID, "User removed successfully.")
+	b.send(ctx, chatID, fmt.Sprintf("User %s removed.", user))
 }
 
 func (b *Bot) handleList(ctx context.Context, _ *bot.Bot, update *models.Update) {

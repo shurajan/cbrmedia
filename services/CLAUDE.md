@@ -26,6 +26,9 @@
 - Миграции — срез `migrations` по `PRAGMA user_version`: только дописывать в конец.
 - Кто пишет: watchlist — tbot/api (`AddUser/RemoveUser`) и recorder (`DisableUser`); watch_state и events — только recorder.
 - `ValidUser`: `^[A-Za-z0-9_.-]{1,64}$` (имя попадает в URL и в имена файлов).
+- `UserFromInput` (`store/user.go`): имя или ссылка → имя (последний непустой сегмент пути, схема необязательна,
+  query/fragment отбрасываются). Вызывают tbot (`/add`, `/del`) и api (`POST /watchlist`); в базу пишется только имя.
+  Те же правила в iOS — `WatchlistViewModel.userName(from:)`, менять синхронно.
 - События: `recording_started|finished|failed`, `user_disabled` — константы `store.Kind*`.
 
 ## Команды

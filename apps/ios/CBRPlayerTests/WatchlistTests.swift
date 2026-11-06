@@ -97,6 +97,43 @@ struct WatchlistViewModelTests {
         #expect(vm.actionError == "user already exists")
     }
 
+    @Test(arguments: [
+        ("alice", "alice"),
+        ("  alice \n", "alice"),
+        ("https://someadress.com/alice", "alice"),
+        ("https://someadress.com/alice/", "alice"),
+        ("https://someadress.com/female/alice/", "alice"),
+        ("https://someadress.com/alice/?tab=1#bio", "alice"),
+        ("someadress.com/alice/", "alice"),
+    ])
+    func userNameFromInput(input: String, expected: String) {
+        #expect(WatchlistViewModel.userName(from: input) == expected)
+    }
+
+    @Test(arguments: ["", "  ", "https://someadress.com", "https://someadress.com/"])
+    func noUserNameInInput(input: String) {
+        #expect(WatchlistViewModel.userName(from: input) == nil)
+    }
+
+    @Test func addByLinkSendsOnlyUserName() async {
+        let service = FakeWatchlistService()
+        let vm = WatchlistViewModel(service: service)
+        vm.newUser = "https://someadress.com/female/bob/"
+        #expect(vm.linkHint == "bob")
+        #expect(vm.canAdd)
+
+        await vm.addNewUser(host: "h", token: "t")
+
+        #expect(service.added == ["bob"])
+        #expect(vm.newUser.isEmpty)
+    }
+
+    @Test func plainNameHasNoLinkHint() {
+        let vm = WatchlistViewModel(service: FakeWatchlistService())
+        vm.newUser = "alice"
+        #expect(vm.linkHint == nil)
+    }
+
     @Test func blankInputCannotBeAdded() {
         let vm = WatchlistViewModel(service: FakeWatchlistService())
         vm.newUser = "   "
