@@ -11,7 +11,8 @@
 // base_url и proxy берутся из $CBR_HOME/config/recorder.json (как у recorder),
 // флаги -base-url и -proxy их переопределяют. Всё сохраняется в DIR:
 // файлы ответов, requests.jsonl (URL, код, заголовки, время каждого запроса)
-// и summary.txt с кратким разбором. В файлах есть URL с CDN-токенами.
+// и summary.txt с кратким разбором. Ссылки во всём сохранённом и напечатанном
+// замаскированы (mask.go): хосты, значения query, имя пользователя, cookies.
 package main
 
 import (
@@ -85,7 +86,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if o.out == "" {
-		o.out = fmt.Sprintf("hlsprobe-%s-%s", user, time.Now().Format("20060102-150405"))
+		// Без имени пользователя: оно маскируется во всех сохраняемых данных.
+		o.out = "hlsprobe-" + time.Now().Format("20060102-150405")
 	}
 	if err := os.MkdirAll(o.out, 0o750); err != nil {
 		log.Error("create output dir", "err", err)
@@ -100,7 +102,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	ctx, stop := svc.SignalContext()
 	defer stop()
 
-	p, err := newProbe(client, o.baseURL, o.out)
+	p, err := newProbe(client, o.baseURL, o.out, newMasker(user))
 	if err != nil {
 		log.Error("open output", "err", err)
 		return 1
@@ -108,11 +110,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	defer p.close()
 
 	p.run(ctx, o, user, raw)
-	if err := os.WriteFile(filepath.Join(o.out, "summary.txt"), []byte(p.summary.String()), 0o600); err != nil {
+	summary := p.mask.text(p.summary.String())
+	if err := os.WriteFile(filepath.Join(o.out, "summary.txt"), []byte(summary), 0o600); err != nil {
 		log.Error("write summary", "err", err)
 		return 1
 	}
-	fmt.Fprint(stdout, p.summary.String())
+	fmt.Fprint(stdout, summary)
 	fmt.Fprintf(stdout, "\nsaved to %s\n", o.out)
 	return 0
 }
@@ -162,6 +165,7 @@ type probe struct {
 	client  *http.Client
 	baseURL string // status API
 	dir     string
+	mask    *masker // всё сохраняемое и печатаемое проходит через него
 	index   *os.File
 	summary strings.Builder
 
@@ -183,12 +187,12 @@ type record struct {
 	Error      string              `json:"error,omitempty"`
 }
 
-func newProbe(client *http.Client, baseURL, dir string) (*probe, error) {
+func newProbe(client *http.Client, baseURL, dir string, mask *masker) (*probe, error) {
 	index, err := os.OpenFile(filepath.Join(dir, "requests.jsonl"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return nil, err
 	}
-	return &probe{client: client, baseURL: baseURL, dir: dir, index: index}, nil
+	return &probe{client: client, baseURL: baseURL, dir: dir, mask: mask, index: index}, nil
 }
 
 func (p *probe) close() { _ = p.index.Close() }
@@ -213,17 +217,21 @@ func (p *probe) get(ctx context.Context, label, rawURL, ext string) (int, []byte
 	n := p.n
 	p.mu.Unlock()
 
-	rec := record{N: n, Label: label, URL: rawURL, At: time.Now().UTC().Format(time.RFC3339Nano)}
+	rec := record{N: n, Label: label, URL: p.mask.text(rawURL), At: time.Now().UTC().Format(time.RFC3339Nano)}
 	start := time.Now()
 	status, body, headers, err := p.fetch(ctx, rawURL)
 	rec.DurationMS = time.Since(start).Milliseconds()
-	rec.Status, rec.Bytes, rec.Headers = status, len(body), headers
+	rec.Status, rec.Bytes, rec.Headers = status, len(body), p.mask.headers(headers)
 	if err != nil {
-		rec.Error = err.Error()
+		rec.Error = p.mask.text(err.Error())
 	}
 	if len(body) > 0 {
 		rec.File = fmt.Sprintf("%03d_%s%s", n, label, ext)
-		if werr := os.WriteFile(filepath.Join(p.dir, rec.File), body, 0o600); werr != nil && err == nil {
+		saved := body
+		if textFile(ext) {
+			saved = []byte(p.mask.text(string(body)))
+		}
+		if werr := os.WriteFile(filepath.Join(p.dir, rec.File), saved, 0o600); werr != nil && err == nil {
 			err = werr
 		}
 	}
@@ -302,37 +310,44 @@ func (p *probe) run(ctx context.Context, o options, user, raw string) {
 		return
 	}
 
-	mediaURL := p.master(ctx, "master", info.HLSSource, true)
+	mediaURL, renditions := p.master(ctx, "master", info.HLSSource, true)
 	if mediaURL == "" {
 		return
 	}
 	last := p.reloads(ctx, mediaURL, o.reloads, o.duration)
 	if last != nil {
-		p.download(ctx, last, o.segments)
+		p.download(ctx, "", last, o.segments)
+	}
+	// Альтернативные дорожки (обычно звук отдельно от видео): номера сегментов
+	// сравниваются с видео — по ним recorder будет выравнивать дорожки.
+	for i, r := range renditions {
+		p.rendition(ctx, i, r, last, o.segments)
 	}
 
 	// Свежий hls_source: меняется ли токен и URL вариантов между запросами.
 	p.logf("\n== fresh status and master")
 	if _, fresh := p.status(ctx, "status_fresh", user); fresh.HLSSource != "" {
 		p.logf("hls_source changed: %v (same path: %v)", fresh.HLSSource != info.HLSSource, stripQuery(fresh.HLSSource) == stripQuery(info.HLSSource))
-		p.master(ctx, "master_fresh", fresh.HLSSource, false)
+		_, _ = p.master(ctx, "master_fresh", fresh.HLSSource, false)
 	}
 }
 
 // master скачивает плейлист по hls_source и, если это master-плейлист, все его
 // варианты и альтернативные дорожки. Возвращает URL media-плейлиста с
-// максимальным битрейтом (или сам URL, если это уже media-плейлист).
-func (p *probe) master(ctx context.Context, label, src string, fetchVariants bool) string {
+// максимальным битрейтом (или сам URL, если это уже media-плейлист) и URL
+// альтернативных дорожек (#EXT-X-MEDIA). Текст плейлиста целиком попадает в summary.
+func (p *probe) master(ctx context.Context, label, src string, fetchVariants bool) (string, []string) {
 	p.logf("\n== %s", label)
 	code, body, err := p.get(ctx, label, src, ".m3u8")
 	text := string(body)
 	p.logf("HTTP %d, %d bytes, err=%v", code, len(body), err)
 	if err != nil || code != http.StatusOK {
-		return ""
+		return "", nil
 	}
+	p.logText(label, text)
 	if !strings.Contains(text, "#EXT-X-STREAM-INF") {
 		p.logf("hls_source is a media playlist")
-		return src
+		return src, nil
 	}
 
 	variants, media := parseMaster(src, text)
@@ -348,7 +363,7 @@ func (p *probe) master(ctx context.Context, label, src string, fetchVariants boo
 		p.logf("rendition: %s", m)
 	}
 	if !fetchVariants {
-		return best
+		return best, media
 	}
 	for i, v := range variants {
 		if v.uri != best {
@@ -360,7 +375,33 @@ func (p *probe) master(ctx context.Context, label, src string, fetchVariants boo
 		code, _, err := p.get(ctx, fmt.Sprintf("rendition%d", i), m, ".m3u8")
 		p.logf("rendition %d playlist: HTTP %d err=%v", i, code, err)
 	}
-	return best
+	return best, media
+}
+
+// logText добавляет текст плейлиста в summary целиком.
+func (p *probe) logText(label, text string) {
+	p.logf("--- %s text:\n%s\n--- end of %s", label, strings.TrimRight(text, "\n"), label)
+}
+
+// rendition загружает альтернативную дорожку, сравнивает её номера сегментов
+// с видео и скачивает её init и последние count сегментов.
+func (p *probe) rendition(ctx context.Context, i int, rawURL string, video *playlist, count int) {
+	label := fmt.Sprintf("rendition%d_now", i)
+	p.logf("\n== %s", label)
+	code, body, err := p.get(ctx, label, rawURL, ".m3u8")
+	if err != nil || code != http.StatusOK {
+		p.logf("HTTP %d err=%v", code, err)
+		return
+	}
+	text := string(body)
+	p.logText(label, text)
+	pl := parseMedia(rawURL, text)
+	line := fmt.Sprintf("seq=%d target=%ds segments=%d maps=%d keys=%d", pl.seq, pl.target, len(pl.segments), len(pl.maps), len(pl.keys))
+	if video != nil {
+		line += fmt.Sprintf(" | video seq at last reload=%d (%d segments)", video.seq, len(video.segments))
+	}
+	p.logf("%s", line)
+	p.download(ctx, fmt.Sprintf("audio%d_", i), &pl, count)
 }
 
 type variant struct {
@@ -462,6 +503,9 @@ func (p *probe) reloads(ctx context.Context, mediaURL string, count int, duratio
 			p.logf("reload %d +%ds: HTTP %d err=%v", i, int(time.Since(start).Seconds()), code, err)
 			return last
 		}
+		if i == 0 {
+			p.logText("media_reload0", string(body))
+		}
 		pl := parseMedia(mediaURL, string(body))
 		line := fmt.Sprintf("reload %d +%ds: seq=%d target=%ds segments=%d disc=%d endlist=%v keys=%d maps=%d",
 			i, int(time.Since(start).Seconds()), pl.seq, pl.target, len(pl.segments), pl.discontinuities, pl.endList, len(pl.keys), len(pl.maps))
@@ -488,19 +532,20 @@ func (p *probe) reloads(ctx context.Context, mediaURL string, count int, duratio
 	return last
 }
 
-// download параллельно скачивает ключи, init-сегменты и последние count сегментов.
-func (p *probe) download(ctx context.Context, pl *playlist, count int) {
+// download параллельно скачивает ключи, init-сегменты и последние count сегментов;
+// prefix отличает файлы дорожек.
+func (p *probe) download(ctx context.Context, prefix string, pl *playlist, count int) {
 	p.logf("\n== segments, keys, init")
 	type job struct{ label, url, ext string }
 	var jobs []job
 	for i, k := range pl.keys {
-		jobs = append(jobs, job{fmt.Sprintf("key%d", i), k, ".key"})
+		jobs = append(jobs, job{fmt.Sprintf("%skey%d", prefix, i), k, ".key"})
 	}
 	for i, m := range pl.maps {
-		jobs = append(jobs, job{fmt.Sprintf("init%d", i), m, ext(m, ".mp4")})
+		jobs = append(jobs, job{fmt.Sprintf("%sinit%d", prefix, i), m, ext(m, ".mp4")})
 	}
 	for i, s := range pl.segments[max(len(pl.segments)-count, 0):] {
-		jobs = append(jobs, job{fmt.Sprintf("segment%d", i), s, ext(s, ".ts")})
+		jobs = append(jobs, job{fmt.Sprintf("%ssegment%d", prefix, i), s, ext(s, ".ts")})
 	}
 
 	var wg sync.WaitGroup

@@ -14,7 +14,7 @@
 | Модуль | Пакеты |
 |--------|--------|
 | `core` | `home` (`Layout`, `Prepare()` = resolve+mkdir+chdir, `ConfigFile(svc)`, `AuthFile()`, `DBFile()`), `store` (SQLite; `user.go` — `UserFromInput`; `check.go` — `WaitFirstCheck`), `config` (`Load(path, Validator)`, `ValidateURL`), `svc` (`Logger`, `SignalContext`), `ctxutil.Sleep` |
-| `recorder` | `internal/app` (`Run`: ClearStates → RecoverPartial → цикл `Sync` раз в 3 с, prune событий раз в час), `internal/recorder` (`Manager.Sync(ctx, desired)`, `watch`, `record`, `classifyFailure` в `delay.go`: 404/410 → неподтверждённого сразу `reject` (`user_rejected`), подтверждённого (`verified`) — `RoomNotFound` и опрос раз в сутки, после `notFoundLimit` = 3 подряд (счётчик в памяти) → `remove`; 401/403/451 → `RoomBlocked` и опрос раз в сутки, 5xx/сеть → `techFailure`, 429 → `Retry-After` (`StatusError`) или `rateLimited`, прочие 4xx → `disable`; `record` возвращает `recordSkipped/Done/Short/Failed`: после долгой записи (`longRecording`) опрос сразу, после неудачной — `recordRetryDelay` (15 с ×2 до 15 мин); `Sink` = store; `status.go` StatusClient (таймаут 30 с, тело ошибки обрезается) + `NewHTTPClient` с выключенным TLS-verify; `delay.go` интервалы), `internal/hls` (свой HLS-рекордер: `playlist.go`, `crypto.go` AES-128, `writer.go` part-файлы `.download` с правами `0o600` и ротацией раз в час, `RecoverPartial`, `recorder.go` `Record`/`DetectFormat`: таймауты запроса `playlistTimeout`/`segmentTimeout`, сегменты строго по порядку — неудачный повторяется, следующие ждут, после `maxSegmentAttempts` = 3 пропускается; ни одного сегмента → `ErrNoSegments`), `internal/config`; `cmd/hlsprobe` — диагностика status API и CDN (сырые ответы в `hlsprobe-<user>-<время>/`, см. README) |
+| `recorder` | `internal/app` (`Run`: ClearStates → RecoverPartial → цикл `Sync` раз в 3 с, prune событий раз в час), `internal/recorder` (`Manager.Sync(ctx, desired)`, `watch`, `record`, `classifyFailure` в `delay.go`: 404/410 → неподтверждённого сразу `reject` (`user_rejected`), подтверждённого (`verified`) — `RoomNotFound` и опрос раз в сутки, после `notFoundLimit` = 3 подряд (счётчик в памяти) → `remove`; 401/403/451 → `RoomBlocked` и опрос раз в сутки, 5xx/сеть → `techFailure`, 429 → `Retry-After` (`StatusError`) или `rateLimited`, прочие 4xx → `disable`; `record` возвращает `recordSkipped/Done/Short/Failed`: после долгой записи (`longRecording`) опрос сразу, после неудачной — `recordRetryDelay` (15 с ×2 до 15 мин); `Sink` = store; `status.go` StatusClient (таймаут 30 с, тело ошибки обрезается) + `NewHTTPClient` с выключенным TLS-verify; `delay.go` интервалы), `internal/hls` (свой HLS-рекордер: `playlist.go`, `crypto.go` AES-128, `writer.go` part-файлы `.download` с правами `0o600` и ротацией раз в час, `RecoverPartial`, `recorder.go` `Record`/`DetectFormat`: таймауты запроса `playlistTimeout`/`segmentTimeout`, сегменты строго по порядку — неудачный повторяется, следующие ждут, после `maxSegmentAttempts` = 3 пропускается; ни одного сегмента → `ErrNoSegments`), `internal/config`; `cmd/hlsprobe` — диагностика status API и CDN (ответы с замаскированными ссылками — `mask.go` — в `hlsprobe-<время>/`, см. README) |
 | `tbot` | `internal/telegram` (`Bot`: `/add /del /list` — имя или ссылка через `store.UserFromInput`, ответ с итоговым именем; inline-меню удаления, `/add` ждёт `WaitFirstCheck` и отвечает `addReply`, поэтому `WithWorkers(4)`; `ForwardEvents` раз в 3 с с курсором `tbot` — в чат только `forwardKinds` (сейчас `user_disabled`, `user_removed`; о записях бот не пишет намеренно), `formatEntry`, `chunk`), `internal/app`, `internal/config` |
 | `api` | `internal/httpapi` (fiber v3: `server.go` маршруты, `auth.go` bearer, `videos.go`, `watchlist.go` `/watchlist` (POST принимает ссылку, ждёт `WaitFirstCheck`, отвечает `{message, user, check}` или 404 для отклонённого) + `/events`, `reqlog.go` — лог каждого запроса через slog, подключается только при `-debug`), `internal/auth` (bcrypt + один uuid-токен в auth.json), `internal/library` (метаданные видео из m3u8, fallback ffprobe), `internal/app`, `internal/config`; `cmd/api hash-password` |
 | `converter` | `internal/converter` (`Run` каждые `-interval`, по умолчанию 5 мин, в `dev.sh` 1 мин; `RunOnce`: `cleanupTemp` → `pending` → `remux` в `media/.convert-<имя>` → `validatePlaylist` → rename / `recordings/failed/`), `cmd/converter` (flock `data/converter.lock`). Базу не использует |
@@ -45,7 +45,7 @@
 ```bash
 make test | make check | make build   # из services/ — по всем модулям; из папки модуля — по нему
 ./dev.sh [служба…]                    # собрать и запустить вместе локально (CBR_HOME=~/cbr-dev, DEBUG=1)
-./dev_probe.sh <user|ссылка>          # hlsprobe с настройками dev и готовыми параметрами → hlsprobe-<user>-<время>/ в корне репо
+./dev_probe.sh <user|ссылка>          # hlsprobe с настройками dev и готовыми параметрами → hlsprobe-<время>/ в корне репо
 CBR_HOME=~/cbr-dev make -C tbot run   # одну службу через go run
 ```
 
@@ -57,12 +57,17 @@ CBR_HOME=~/cbr-dev make -C tbot run   # одну службу через go run
 `-wait 5m`, `-duration 5m`, `-segments 4`); собирает `$CBR_HOME/bin/hlsprobe` и запускает из корня репо. Нужен новый
 замер — добавь флаг в `cmd/hlsprobe` и значение в скрипт, а не аргументы пользователю.
 
-Не проверено на реальных status API и CDN (ответят результаты `dev_probe.sh`, в корне репо `hlsprobe-*/`):
-- коды ответов для несуществующего и заблокированного пользователя — на них построены `classifyFailure` и `RoomNotFound`/`RoomBlocked`;
-- различает ли status API регистр имени (все имена приводятся к нижнему регистру);
-- меняются ли токены в URL одних и тех же сегментов между перезагрузками: `hls.Record` отличает сегменты по полному URL,
-  при меняющихся токенах сегменты задвоятся — тогда переходить на `MEDIA-SEQUENCE`;
-- сколько живёт токен `hls_source` (обрыв записи посреди стрима, `longRecording`) и шлёт ли status API `Retry-After` на 429.
+Замер 2026-11-06 (`dev_probe.sh`, один пользователь в эфире):
+- несуществующий пользователь → 404; имя в верхнем регистре → 404: status API различает регистр, имена в нижнем — верно;
+- `hls_source` при каждом запросе новый (другой edge, новый `session` в query); master: 4 варианта до 1080p
+  (5,1 Мбит/с), **звук — отдельные дорожки `#EXT-X-MEDIA`**, варианты — только видео. Recorder пишет лучший вариант,
+  поэтому записи без звука (подтверждено `ffprobe` на dev-записях) — не исправлено;
+- LL-HLS, fMP4 (`#EXT-X-MAP`, `.m4s`), target 2 с, в плейлисте всего 4 сегмента (окно 8 с), сегмент ~1 МБ качается
+  0,6–1 с; без шифрования;
+- токен `session` за 5 минут перезагрузок не менялся и не истёк: сравнение сегментов по полному URL работает,
+  переходить на `MEDIA-SEQUENCE` не нужно.
+
+Не проверено: коды для заблокированного пользователя (401/403), `Retry-After` на 429, срок жизни `session` дольше 5 минут.
 
 ## Соглашения
 

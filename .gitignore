@@ -104,7 +104,7 @@ services/recorder/recorder
 services/recorder/cmd/recorder/recorder
 services/recorder/hlsprobe
 services/recorder/cmd/hlsprobe/hlsprobe
-# Результаты hlsprobe: ответы status API и CDN с токенами
+# Результаты hlsprobe: ответы status API и CDN, сегменты и ключи стримов
 hlsprobe-*/
 services/tbot/tbot
 services/tbot/cmd/tbot/tbot
