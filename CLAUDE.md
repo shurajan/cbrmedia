@@ -3,6 +3,9 @@
 Личная медиа-платформа: Go-бэкенд записывает живые HLS-стримы и раздаёт их iPad-плееру.
 Язык документации, комментариев и сообщений коммитов — русский.
 
+Версия 1.0 (тег `v1.0`, исправления — `v1.0.x`): функционал и дизайн зафиксированы. Дальше — только исправления ошибок и то, что
+владелец попросит явно; поведение, меняющее логику, согласовывать.
+
 | Папка | Что | Детали |
 |-------|-----|--------|
 | `services/` | Go 1.26, независимые службы `recorder`, `tbot`, `api`, `converter` + библиотека `core` (общая база SQLite) | `services/CLAUDE.md` |
@@ -27,7 +30,7 @@ CBRPlayer ──HTTP :8000 (Bearer)──▶ api ──▶ ~/.cbr/media
 - `GET /videos/:name/*` — файлы HLS; `DELETE /videos/:name`
 - `GET/POST /watchlist`, `DELETE /watchlist/:user` — вкладка «Watchlist» в iOS
   (Go `WatchEntry` в `watchlist.go` ↔ Swift `Models/WatchEntryModel.swift`). `POST` и `/add` в tbot принимают имя
-  или ссылку на страницу, сохраняется только имя в нижнем регистре (Go `store.UserFromInput` ↔ Swift `WatchlistViewModel.userName(from:)`).
+  или ссылку на страницу, сохраняется только имя в нижнем регистре (`DELETE` и `/del` тоже приводят имя к нижнему) (Go `store.UserFromInput` ↔ Swift `WatchlistViewModel.userName(from:)`).
   Ответ на добавление — после первой проверки recorder'ом (5–8 с): 404, если пользователя нет.
   `roomStatus` `blocked` / `not found` (Go `store.Room*`) ↔ Swift `WatchEntryModel.Status.blocked/.notFound`
 - `GET /events?after=` — пока не используется клиентами; полная таблица — `services/api/README.md`

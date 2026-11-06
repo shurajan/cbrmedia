@@ -125,25 +125,62 @@ func (r *Recorder) DetectFormat(ctx context.Context, rawURL string) Format {
 // сразу недоступен, пуст или застыл. Для recorder это неудачная попытка.
 var ErrNoSegments = errors.New("no segments recorded")
 
+// ErrNoNewSegments — первый плейлист не содержит ничего новее Options.After:
+// это застывший плейлист закончившегося эфира, который CDN и status API ещё
+// отдают. Файл не создавался, записывать нечего.
+var ErrNoNewSegments = errors.New("playlist has not advanced since the last recording")
+
 // maxSegmentAttempts — сколько раз подряд пробовать скачать сегмент, прежде чем
 // пропустить его. Пока сегмент повторяется, следующие за ним ждут, чтобы
 // в файл они попали по порядку.
 const maxSegmentAttempts = 3
 
+// Options — что Record знает о предыдущей записи того же пользователя.
+type Options struct {
+	// After — ключ (SegmentKey) последнего сегмента, записанного прошлой записью.
+	// Если он есть в первом плейлисте, он и все сегменты до него пропускаются:
+	// запись продолжается с места, где оборвалась прошлая (истёк CDN-токен,
+	// ошибка плейлиста), без дубликата окна. Если новее него в первом плейлисте
+	// ничего нет, Record возвращает ErrNoNewSegments, не создав файла.
+	// Пустой — записывать всё.
+	After string
+	// OnStart вызывается один раз перед записью первого сегмента, когда ясно,
+	// что запись действительно будет (файл создаётся следом).
+	OnStart func()
+}
+
+// Result — итог записи.
+type Result struct {
+	// Active — время от начала записи до последнего записанного сегмента (0,
+	// если сегментов не было): без ожидания застоя в конце. По нему recorder
+	// отличает настоящую долгую запись от скачанного застывшего плейлиста.
+	Active time.Duration
+	// Last — ключ последнего записанного сегмента для Options.After следующей
+	// записи; пустой, если сегментов не было.
+	Last string
+}
+
+// SegmentKey — идентификатор сегмента между перезагрузками плейлиста и между
+// записями: URL без query и fragment, чтобы смена CDN-токена в параметрах не
+// делала уже записанный сегмент «новым».
+func SegmentKey(uri string) string {
+	if i := strings.IndexAny(uri, "?#"); i >= 0 {
+		return uri[:i]
+	}
+	return uri
+}
+
 // Record записывает живой стрим masterURL в файлы <baseName>_part<N>.<ext>
 // до конца стрима или отмены ctx. Отмена ctx не считается ошибкой. Если стрим
-// закончился, а записать не удалось ничего, возвращает ErrNoSegments.
-//
-// active — время от начала записи до последнего записанного сегмента (0, если
-// сегментов не было): без ожидания застоя в конце. По нему recorder отличает
-// настоящую долгую запись от повторно скачанного застывшего плейлиста.
-func (r *Recorder) Record(ctx context.Context, masterURL, baseName string, f Format) (active time.Duration, err error) {
+// закончился, а записать не удалось ничего, возвращает ErrNoSegments; если
+// плейлист не продвинулся с прошлой записи (opts.After) — ErrNoNewSegments.
+func (r *Recorder) Record(ctx context.Context, masterURL, baseName string, f Format, opts Options) (Result, error) {
 	log := r.logger().With("recording", baseName)
 	started := time.Now()
 
 	mediaURL, v, err := resolveMediaPlaylist(ctx, r.Client, masterURL)
 	if err != nil {
-		return 0, fmt.Errorf("resolving media playlist: %w", err)
+		return Result{}, fmt.Errorf("resolving media playlist: %w", err)
 	}
 	if v.uri != "" {
 		log.Info("selected variant", "bandwidth", v.bandwidth, "uri", v.uri)
@@ -163,22 +200,24 @@ func (r *Recorder) Record(ctx context.Context, masterURL, baseName string, f For
 	defer w.close()
 
 	log.Info("native HLS recorder started", "playlist", mediaURL, "ext", f.Ext)
-	err = r.download(ctx, log, mediaURL, w)
+	last, err := r.download(ctx, log, mediaURL, w, opts)
+	res := Result{Last: last}
 	if !w.lastWrite.IsZero() {
-		active = w.lastWrite.Sub(started)
+		res.Active = w.lastWrite.Sub(started)
 	}
 	if err != nil {
-		return active, err
+		return res, err
 	}
 	if w.segments == 0 && ctx.Err() == nil {
-		return 0, ErrNoSegments
+		return Result{}, ErrNoSegments
 	}
-	return active, nil
+	return res, nil
 }
 
 // download перезагружает media-плейлист и пишет новые сегменты в w до конца
-// стрима или отмены ctx. Ошибка — только если не удалось записать на диск.
-func (r *Recorder) download(ctx context.Context, log *slog.Logger, mediaURL string, w *segmentWriter) error {
+// стрима или отмены ctx. Возвращает ключ последнего записанного сегмента.
+// Ошибка — ErrNoNewSegments или если не удалось записать на диск.
+func (r *Recorder) download(ctx context.Context, log *slog.Logger, mediaURL string, w *segmentWriter, opts Options) (last string, err error) {
 	retryDelay := r.retryDelay
 	if retryDelay <= 0 {
 		retryDelay = 3 * time.Second
@@ -189,20 +228,21 @@ func (r *Recorder) download(ctx context.Context, log *slog.Logger, mediaURL stri
 	}
 
 	keys := make(map[string][]byte) // URI ключа -> ключ
-	seen := make(map[string]bool)   // записанные или пропущенные сегменты
+	seen := make(map[string]bool)   // SegmentKey записанных или пропущенных сегментов
 	failures := make(map[string]int)
 	errStreak := 0
+	first := true              // первый разобранный плейлист: к нему применяется opts.After
 	lastProgress := time.Now() // время последнего записанного сегмента
 	var targetDuration float64
 
 	for {
 		if stopped(ctx, log) {
-			return nil
+			return last, nil
 		}
 
 		if stalled := time.Since(lastProgress); stalled >= stallLimit(stallTimeout, targetDuration) {
 			log.Warn("no new segments, assuming stream ended", "stalled", stalled.Round(time.Second))
-			return nil
+			return last, nil
 		}
 
 		text, status, err := fetchText(ctx, r.Client, mediaURL)
@@ -210,15 +250,15 @@ func (r *Recorder) download(ctx context.Context, log *slog.Logger, mediaURL stri
 			// 4xx (кроме 408/429) означает, что живой стрим закончился.
 			if status >= 400 && status < 500 && status != http.StatusRequestTimeout && status != http.StatusTooManyRequests {
 				log.Info("playlist gone", "status", status)
-				return nil
+				return last, nil
 			}
 			errStreak++
 			if errStreak >= 5 {
 				log.Warn("giving up after repeated playlist errors", "err", err)
-				return nil
+				return last, nil
 			}
 			if ctxutil.Sleep(ctx, retryDelay) {
-				return nil
+				return last, nil
 			}
 			continue
 		}
@@ -228,23 +268,37 @@ func (r *Recorder) download(ctx context.Context, log *slog.Logger, mediaURL stri
 		if err != nil {
 			log.Warn("parse playlist", "err", err)
 			if ctxutil.Sleep(ctx, retryDelay) {
-				return nil
+				return last, nil
 			}
 			continue
 		}
 
 		targetDuration = pl.targetDuration
 
+		if first {
+			first = false
+			if opts.After != "" {
+				found, hasNew := resumeAfter(pl.segments, opts.After, seen)
+				switch {
+				case found && !hasNew:
+					return "", ErrNoNewSegments
+				case found:
+					log.Info("resuming after the last recorded segment", "after", opts.After)
+				}
+			}
+		}
+
 		newCount := 0
 		// retry — проход прерван на сегменте или init, которые надо повторить:
 		// остальные сегменты ждут, чтобы не нарушить порядок в файле.
 		retry := false
 		for _, seg := range pl.segments {
-			if seen[seg.uri] {
+			key := SegmentKey(seg.uri)
+			if seen[key] {
 				continue
 			}
 			if stopped(ctx, log) {
-				return nil
+				return last, nil
 			}
 
 			// Init-сегмент fMP4 (общий заголовок для последующих фрагментов).
@@ -263,25 +317,29 @@ func (r *Recorder) download(ctx context.Context, log *slog.Logger, mediaURL stri
 			data, err := downloadSegment(ctx, r.Client, keys, seg)
 			if err != nil {
 				if stopped(ctx, log) {
-					return nil
+					return last, nil
 				}
-				failures[seg.uri]++
-				if failures[seg.uri] < maxSegmentAttempts {
+				failures[key]++
+				if failures[key] < maxSegmentAttempts {
 					log.Warn("segment download failed, retrying", "uri", seg.uri,
-						"attempt", failures[seg.uri], "err", err)
+						"attempt", failures[key], "err", err)
 					retry = true
 					break
 				}
 				log.Warn("segment skipped after repeated failures", "uri", seg.uri, "err", err)
-				delete(failures, seg.uri)
-				seen[seg.uri] = true
+				delete(failures, key)
+				seen[key] = true
 				continue
 			}
-			delete(failures, seg.uri)
-			seen[seg.uri] = true
-			if err := w.write(data, seg.duration); err != nil {
-				return fmt.Errorf("writing segment: %w", err)
+			delete(failures, key)
+			seen[key] = true
+			if w.segments == 0 && opts.OnStart != nil {
+				opts.OnStart()
 			}
+			if err := w.write(data, seg.duration); err != nil {
+				return last, fmt.Errorf("writing segment: %w", err)
+			}
+			last = key
 			newCount++
 			lastProgress = time.Now()
 		}
@@ -291,21 +349,41 @@ func (r *Recorder) download(ctx context.Context, log *slog.Logger, mediaURL stri
 			// без счётчика, бесконечный повтор ограничен таймаутом застоя.
 			if ctxutil.Sleep(ctx, retryDelay) {
 				log.Info("download stopped")
-				return nil
+				return last, nil
 			}
 			continue
 		}
 
 		if pl.endList {
 			log.Info("stream ended (#EXT-X-ENDLIST)")
-			return nil
+			return last, nil
 		}
 
 		if ctxutil.Sleep(ctx, reloadDelay(pl.targetDuration, newCount)) {
 			log.Info("download stopped")
-			return nil
+			return last, nil
 		}
 	}
+}
+
+// resumeAfter отмечает в seen сегменты плейлиста до after включительно (по
+// SegmentKey) и сообщает, нашёлся ли after (found) и есть ли после него новые
+// сегменты (hasNew). Если after в плейлисте нет, ничего не отмечается: прошлая
+// запись оборвалась давно, окно ушло вперёд, записывать надо всё.
+func resumeAfter(segments []playlistSegment, after string, seen map[string]bool) (found, hasNew bool) {
+	idx := -1
+	for i, seg := range segments {
+		if SegmentKey(seg.uri) == after {
+			idx = i
+		}
+	}
+	if idx < 0 {
+		return false, len(segments) > 0
+	}
+	for _, seg := range segments[:idx+1] {
+		seen[SegmentKey(seg.uri)] = true
+	}
+	return true, idx+1 < len(segments)
 }
 
 // stopped сообщает, что запись остановлена отменой ctx (это не ошибка).

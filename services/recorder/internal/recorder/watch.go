@@ -9,6 +9,7 @@ import (
 
 	"cbr/core/ctxutil"
 	"cbr/core/store"
+	"cbr/recorder/internal/hls"
 )
 
 // watch — цикл опроса одного пользователя. Когда у комнаты появляется
@@ -29,6 +30,11 @@ func (m *Manager) watch(ctx context.Context, user string, initialDelay time.Dura
 	verified := m.verified(ctx, user)
 	notFound := 0         // ответов 404/410 подряд
 	failedRecordings := 0 // неудачных попыток записи подряд
+	// lastSegment — ключ последнего записанного сегмента (hls.Options.After):
+	// следующая запись того же стрима продолжается после него, а застывший после
+	// эфира плейлист, который CDN и status API ещё отдают, не записывается снова.
+	// Сбрасывается, когда стрим закончился по данным status API.
+	lastSegment := ""
 	for {
 		if ctx.Err() != nil {
 			return
@@ -91,8 +97,11 @@ func (m *Manager) watch(ctx context.Context, user string, initialDelay time.Dura
 
 		if room.HLSURL == "" {
 			failedRecordings = 0
+			lastSegment = ""
 		} else {
-			switch m.record(ctx, user, room.HLSURL) {
+			var result recordResult
+			result, lastSegment = m.record(ctx, user, room.HLSURL, lastSegment)
+			switch result {
 			case recordSkipped:
 				// Свежий URL получить не удалось — сразу опрашиваем снова, чтобы не пропустить начало стрима.
 				continue
@@ -101,7 +110,7 @@ func (m *Manager) watch(ctx context.Context, user string, initialDelay time.Dura
 				// посреди стрима (например, истёк CDN-токен), продолжение пойдёт в новый файл.
 				failedRecordings = 0
 				continue
-			case recordShort:
+			case recordShort, recordStale:
 				failedRecordings = 0
 			case recordFailed:
 				failedRecordings++
@@ -189,12 +198,17 @@ const (
 	recordSkipped recordResult = iota // свежий URL получить не удалось, запись не начиналась
 	recordDone                        // сегменты шли не меньше longRecording (или слежение остановлено)
 	recordShort                       // последний сегмент записан раньше, чем через longRecording
+	recordStale                       // плейлист не продвинулся с прошлой записи (hls.ErrNoNewSegments): файла и событий нет
 	recordFailed                      // запись не удалась (в том числе hls.ErrNoSegments)
 )
 
 // record определяет формат по первому URL, затем берёт свежий URL (чтобы
-// CDN-токен не был использован к началу записи) и записывает стрим.
-func (m *Manager) record(ctx context.Context, user, streamURL string) recordResult {
+// CDN-токен не был использован к началу записи) и записывает стрим после
+// сегмента after (ключ из прошлой записи, см. hls.Options). Возвращает итог и
+// ключ последнего записанного сегмента (after, если ничего не записано).
+// Состояние «идёт запись» и событие recording_started ставятся, когда записан
+// первый сегмент: застывший плейлист их не порождает.
+func (m *Manager) record(ctx context.Context, user, streamURL, after string) (recordResult, string) {
 	log := m.log.With("user", user)
 	baseName := fmt.Sprintf("%s_%s", user, time.Now().Format("2006-01-02_15-04"))
 
@@ -204,36 +218,52 @@ func (m *Manager) record(ctx context.Context, user, streamURL string) recordResu
 	fresh, status, err := m.status.Fetch(ctx, user)
 	if err != nil {
 		log.Warn("refresh stream URL failed", "status", status, "err", err)
-		return recordSkipped
+		return recordSkipped, after
 	}
 	if fresh.HLSURL == "" {
 		log.Info("stream ended before download could start")
-		return recordSkipped
+		return recordSkipped, after
 	}
 
 	file := baseName + "." + format.Ext
-	log.Info("downloading stream", "file", file)
-	m.setState(ctx, user, fresh.Status, true)
-	m.event(ctx, store.KindRecordingStarted, user, fmt.Sprintf("Recording %s started: %s", user, file))
-
-	active, err := m.rec.Record(ctx, fresh.HLSURL, baseName, format)
-	m.setState(ctx, user, fresh.Status, false)
+	started := false
+	opts := hls.Options{
+		After: after,
+		OnStart: func() {
+			started = true
+			log.Info("downloading stream", "file", file)
+			m.setState(ctx, user, fresh.Status, true)
+			m.event(ctx, store.KindRecordingStarted, user, fmt.Sprintf("Recording %s started: %s", user, file))
+		},
+	}
+	res, err := m.rec.Record(ctx, fresh.HLSURL, baseName, format, opts)
+	if res.Last != "" {
+		after = res.Last
+	}
+	if started {
+		m.setState(ctx, user, fresh.Status, false)
+	}
 	switch {
+	case errors.Is(err, hls.ErrNoNewSegments):
+		log.Info("stream has not advanced since the last recording, nothing to record", "after", after)
+		return recordStale, after
 	case err != nil:
 		log.Error("download failed", "file", file, "err", err)
 		m.event(ctx, store.KindRecordingFailed, user, fmt.Sprintf("Recording %s failed: %v", user, err))
-		return recordFailed
+		return recordFailed, after
 	case ctx.Err() != nil:
 		log.Info("download stopped", "file", file)
-		m.event(ctx, store.KindRecordingFinished, user, fmt.Sprintf("Recording %s stopped: %s", user, file))
+		if started {
+			m.event(ctx, store.KindRecordingFinished, user, fmt.Sprintf("Recording %s stopped: %s", user, file))
+		}
 	default:
 		log.Info("download finished", "file", file)
 		m.event(ctx, store.KindRecordingFinished, user, fmt.Sprintf("Recording %s finished: %s", user, file))
 	}
 	// Длительность — до последнего сегмента: ожидание застоя в конце не в счёт,
 	// иначе застывший после эфира плейлист записывался бы снова раз в StallTimeout.
-	if ctx.Err() == nil && active < m.timing.longRecording {
-		return recordShort
+	if ctx.Err() == nil && res.Active < m.timing.longRecording {
+		return recordShort, after
 	}
-	return recordDone
+	return recordDone, after
 }

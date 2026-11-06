@@ -56,6 +56,7 @@ func (f *fakeStatus) Fetch(_ context.Context, _ string) (Room, int, error) {
 type recordCall struct {
 	url, baseName string
 	format        hls.Format
+	after         string
 }
 
 type fakeRecorder struct {
@@ -65,17 +66,27 @@ type fakeRecorder struct {
 	err    error         // что возвращает Record
 	active time.Duration // время до последнего сегмента, которое возвращает Record
 	sleep  time.Duration // сколько длится Record
+	last   string        // ключ последнего сегмента, который возвращает Record
+	// stale — Record отвечает ErrNoNewSegments (не вызывая OnStart), если opts.After == stale.
+	stale string
 }
 
 func (f *fakeRecorder) DetectFormat(context.Context, string) hls.Format { return hls.FormatMP4 }
 
-func (f *fakeRecorder) Record(ctx context.Context, url, baseName string, format hls.Format) (time.Duration, error) {
+func (f *fakeRecorder) Record(ctx context.Context, url, baseName string, format hls.Format, opts hls.Options) (hls.Result, error) {
 	f.mu.Lock()
-	f.calls = append(f.calls, recordCall{url, baseName, format})
+	f.calls = append(f.calls, recordCall{url, baseName, format, opts.After})
 	first := len(f.calls) == 1
 	f.mu.Unlock()
 	if first && f.done != nil {
 		close(f.done)
+	}
+	if f.stale != "" && opts.After == f.stale {
+		return hls.Result{}, hls.ErrNoNewSegments
+	}
+	// Как настоящий Record: первый сегмент записан сразу, дальше идёт запись.
+	if opts.OnStart != nil {
+		opts.OnStart()
 	}
 	if f.sleep > 0 {
 		select {
@@ -83,7 +94,18 @@ func (f *fakeRecorder) Record(ctx context.Context, url, baseName string, format 
 		case <-ctx.Done():
 		}
 	}
-	return f.active, f.err
+	return hls.Result{Active: f.active, Last: f.last}, f.err
+}
+
+// afters возвращает opts.After каждого вызова Record по порядку.
+func (f *fakeRecorder) afters() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]string, 0, len(f.calls))
+	for _, c := range f.calls {
+		out = append(out, c.after)
+	}
+	return out
 }
 
 func (f *fakeRecorder) callCount() int {
@@ -727,5 +749,64 @@ func TestStatusClientReturnsRetryAfter(t *testing.T) {
 	_, status, err := NewStatusClient(srv.Client(), srv.URL).Fetch(context.Background(), "x")
 	if status != http.StatusTooManyRequests || retryAfter(err) != 42*time.Second {
 		t.Errorf("status = %d, retryAfter = %v, err = %v", status, retryAfter(err), err)
+	}
+}
+
+func TestWatchResumesAfterLastSegment(t *testing.T) {
+	// Запись оборвалась посреди стрима: следующая продолжается после последнего записанного сегмента.
+	rec := &fakeRecorder{last: "https://cdn/s9.ts"}
+	m, _ := newTestManager(liveStatus(), rec)
+	m.timing.publicDelay = time.Hour
+	m.timing.longRecording = 0 // любая запись долгая: опрос и новая запись сразу
+
+	recordCallsWithin(t, m, rec, 100*time.Millisecond)
+	afters := rec.afters()
+	if len(afters) < 2 || afters[0] != "" || afters[1] != "https://cdn/s9.ts" {
+		t.Errorf("Record After = %q, want \"\" then the last recorded segment", afters)
+	}
+}
+
+func TestWatchDoesNotRecordStalePlaylistAgain(t *testing.T) {
+	// После эфира CDN отдаёт застывший плейлист, а status API ещё отдаёт hls_source:
+	// вторая попытка видит, что новее записанного ничего нет, — ни файла, ни событий.
+	rec := &fakeRecorder{last: "https://cdn/s9.ts", stale: "https://cdn/s9.ts"}
+	m, sink := newTestManager(liveStatus(), rec)
+	m.timing.publicDelay = time.Hour
+	m.timing.longRecording = 0
+
+	if n := recordCallsWithin(t, m, rec, 100*time.Millisecond); n != 2 {
+		t.Errorf("Record called %d times, want 2: the stale attempt waits for the usual delay", n)
+	}
+	if kinds := sink.kinds(); !slices.Equal(kinds, []string{store.KindRecordingStarted, store.KindRecordingFinished}) {
+		t.Errorf("events = %v, want one started/finished pair", kinds)
+	}
+	if sink.states["bob"] {
+		t.Error("recording state left on after a stale attempt")
+	}
+}
+
+func TestWatchForgetsLastSegmentWhenStreamEnds(t *testing.T) {
+	// Стрим закончился по данным status API — новый стрим пишется с начала.
+	status := &fakeStatus{responses: []statusResponse{
+		{room: Room{Status: "public", HLSURL: "https://cdn/a.m3u8"}, status: 200},
+		{room: Room{Status: "public", HLSURL: "https://cdn/a.m3u8"}, status: 200}, // свежий URL
+		{room: Room{Status: "offline"}, status: 200},
+		{room: Room{Status: "public", HLSURL: "https://cdn/b.m3u8"}, status: 200},
+		{room: Room{Status: "public", HLSURL: "https://cdn/b.m3u8"}, status: 200}, // свежий URL
+		{room: Room{Status: "offline"}, status: 200},
+	}}
+	rec := &fakeRecorder{last: "https://cdn/s9.ts"}
+	m, _ := newTestManager(status, rec)
+	m.timing.longRecording = time.Hour // короткая запись: обычная пауза, затем опрос
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m.Sync(ctx, []string{"bob"})
+	waitFor(t, func() bool { return rec.callCount() >= 2 })
+	cancel()
+	m.Wait()
+
+	if afters := rec.afters(); !slices.Equal(afters[:2], []string{"", ""}) {
+		t.Errorf("Record After = %q, want empty for a new stream", afters)
 	}
 }

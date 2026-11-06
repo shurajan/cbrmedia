@@ -265,7 +265,7 @@ func TestRecordEndToEnd(t *testing.T) {
 	if f := r.DetectFormat(ctx, srv.URL+"/master.m3u8"); f != FormatTS {
 		t.Errorf("DetectFormat = %+v, want ts", f)
 	}
-	if _, err := r.Record(ctx, srv.URL+"/master.m3u8", "user_2026", FormatTS); err != nil {
+	if _, err := r.Record(ctx, srv.URL+"/master.m3u8", "user_2026", FormatTS, Options{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -294,7 +294,7 @@ func TestRecordStopsWhenPlaylistGone(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	// Стрим закончился, не дав ни одного сегмента, — для recorder это неудачная попытка.
-	if _, err := r.Record(ctx, srv.URL+"/media.m3u8", "x", FormatTS); !errors.Is(err, ErrNoSegments) {
+	if _, err := r.Record(ctx, srv.URL+"/media.m3u8", "x", FormatTS, Options{}); !errors.Is(err, ErrNoSegments) {
 		t.Fatalf("Record returned %v, want ErrNoSegments", err)
 	}
 	if ctx.Err() != nil {
@@ -380,13 +380,16 @@ func TestRecordStopsOnStalledPlaylist(t *testing.T) {
 	defer cancel()
 
 	started := time.Now()
-	active, err := r.Record(ctx, srv.URL+"/media.m3u8", "stall", FormatTS)
+	res, err := r.Record(ctx, srv.URL+"/media.m3u8", "stall", FormatTS, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Время до последнего сегмента — без ожидания застоя в конце.
-	if took := time.Since(started); active <= 0 || active >= r.StallTimeout || took < r.StallTimeout {
-		t.Errorf("active = %v, Record took %v; want 0 < active < stall timeout <= took", active, took)
+	if took := time.Since(started); res.Active <= 0 || res.Active >= r.StallTimeout || took < r.StallTimeout {
+		t.Errorf("active = %v, Record took %v; want 0 < active < stall timeout <= took", res.Active, took)
+	}
+	if want := SegmentKey(srv.URL + "/s1.ts"); res.Last != want {
+		t.Errorf("Last = %q, want %q", res.Last, want)
 	}
 	if ctx.Err() != nil {
 		t.Fatal("Record did not stop on a stalled playlist")
@@ -425,7 +428,7 @@ func TestRecordWaitsForInitSegment(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if _, err := r.Record(ctx, srv.URL+"/media.m3u8", "rec", FormatMP4); err != nil {
+	if _, err := r.Record(ctx, srv.URL+"/media.m3u8", "rec", FormatMP4, Options{}); err != nil {
 		t.Fatal(err)
 	}
 	if got := listDir(t, dir); fmt.Sprint(got) != "[rec_part1.mp4]" {
@@ -458,7 +461,7 @@ func TestRecordStartsNewPartWhenInitChanges(t *testing.T) {
 
 	dir := t.TempDir()
 	r := &Recorder{Client: srv.Client(), Dir: dir, Log: discard}
-	if _, err := r.Record(context.Background(), srv.URL+"/media.m3u8", "rec", FormatMP4); err != nil {
+	if _, err := r.Record(context.Background(), srv.URL+"/media.m3u8", "rec", FormatMP4, Options{}); err != nil {
 		t.Fatal(err)
 	}
 	p1, _ := os.ReadFile(filepath.Join(dir, "rec_part1.mp4"))
@@ -543,7 +546,7 @@ func TestRecordSameBaseNameDoesNotOverwrite(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	for range 2 {
-		if _, err := r.Record(ctx, srv.URL+"/master.m3u8", "user_2026", FormatTS); err != nil {
+		if _, err := r.Record(ctx, srv.URL+"/master.m3u8", "user_2026", FormatTS, Options{}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -639,7 +642,7 @@ func TestRecordKeepsSegmentOrderOnRetry(t *testing.T) {
 	r := &Recorder{Client: srv.Client(), Dir: dir, Log: discard, retryDelay: 10 * time.Millisecond}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if _, err := r.Record(ctx, srv.URL+"/media.m3u8", "order", FormatTS); err != nil {
+	if _, err := r.Record(ctx, srv.URL+"/media.m3u8", "order", FormatTS, Options{}); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := os.ReadFile(filepath.Join(dir, "order_part1.ts")); string(got) != "AB" {
@@ -653,10 +656,123 @@ func TestRecordSkipsSegmentAfterRepeatedFailures(t *testing.T) {
 	r := &Recorder{Client: srv.Client(), Dir: dir, Log: discard, retryDelay: 10 * time.Millisecond}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if _, err := r.Record(ctx, srv.URL+"/media.m3u8", "skip", FormatTS); err != nil {
+	if _, err := r.Record(ctx, srv.URL+"/media.m3u8", "skip", FormatTS, Options{}); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := os.ReadFile(filepath.Join(dir, "skip_part1.ts")); string(got) != "B" {
 		t.Errorf("recording = %q, want the broken segment skipped", got)
+	}
+}
+
+func TestSegmentKey(t *testing.T) {
+	cases := map[string]string{
+		"https://cdn/a/s1.ts":               "https://cdn/a/s1.ts",
+		"https://cdn/a/s1.ts?token=abc&e=1": "https://cdn/a/s1.ts",
+		"https://cdn/a/s1.ts#frag":          "https://cdn/a/s1.ts",
+	}
+	for uri, want := range cases {
+		if got := SegmentKey(uri); got != want {
+			t.Errorf("SegmentKey(%q) = %q, want %q", uri, got, want)
+		}
+	}
+}
+
+func TestRecordResumesAfterLastSegment(t *testing.T) {
+	// Прошлая запись закончилась на s5: новая продолжается с s6, без дубликата.
+	srv := fakeStream(t)
+	dir := t.TempDir()
+	r := &Recorder{Client: srv.Client(), Dir: dir, Log: discard}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	starts := 0
+	opts := Options{After: SegmentKey(srv.URL + "/s5.ts"), OnStart: func() { starts++ }}
+	res, err := r.Record(ctx, srv.URL+"/master.m3u8", "resume", FormatTS, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "resume_part1.ts")); string(got) != "SIX" {
+		t.Errorf("recording = %q, want only the segment after s5 (files: %v)", got, listDir(t, dir))
+	}
+	if want := SegmentKey(srv.URL + "/s6.ts"); res.Last != want {
+		t.Errorf("Last = %q, want %q", res.Last, want)
+	}
+	if starts != 1 {
+		t.Errorf("OnStart called %d times, want 1", starts)
+	}
+}
+
+func TestRecordStalePlaylistIsNotRecorded(t *testing.T) {
+	// Плейлист не продвинулся с прошлой записи (застыл после эфира): ни файла, ни OnStart.
+	srv := fakeStream(t)
+	dir := t.TempDir()
+	r := &Recorder{Client: srv.Client(), Dir: dir, Log: discard}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	opts := Options{After: SegmentKey(srv.URL + "/s6.ts"), OnStart: func() { t.Error("OnStart called for a stale playlist") }}
+	res, err := r.Record(ctx, srv.URL+"/master.m3u8", "stale", FormatTS, opts)
+	if !errors.Is(err, ErrNoNewSegments) {
+		t.Fatalf("Record returned %v, want ErrNoNewSegments", err)
+	}
+	if res != (Result{}) {
+		t.Errorf("Result = %+v, want empty", res)
+	}
+	if files := listDir(t, dir); len(files) != 0 {
+		t.Errorf("files created for a stale playlist: %v", files)
+	}
+}
+
+func TestRecordAfterUnknownSegmentRecordsAll(t *testing.T) {
+	// Прошлая запись оборвалась давно, её последнего сегмента в окне уже нет: пишется всё.
+	srv := fakeStream(t)
+	dir := t.TempDir()
+	r := &Recorder{Client: srv.Client(), Dir: dir, Log: discard}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	opts := Options{After: SegmentKey(srv.URL + "/s2.ts")}
+	if _, err := r.Record(ctx, srv.URL+"/master.m3u8", "gap", FormatTS, opts); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "gap_part1.ts")); string(got) != "FIVESIX" {
+		t.Errorf("recording = %q, want FIVESIX", got)
+	}
+}
+
+func TestRecordDedupesSegmentsByPath(t *testing.T) {
+	// CDN меняет токен в query сегментов при каждой перезагрузке плейлиста:
+	// один и тот же сегмент не должен попасть в файл дважды.
+	var reloads atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/media.m3u8":
+			n := reloads.Add(1)
+			end := ""
+			if n >= 3 {
+				end = "#EXT-X-ENDLIST\n"
+			}
+			fmt.Fprintf(w, "#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1,\ns1.ts?t=%d\n%s", n, end)
+		case "/s1.ts":
+			fmt.Fprint(w, "ONE")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	r := &Recorder{Client: srv.Client(), Dir: dir, Log: discard}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	res, err := r.Record(ctx, srv.URL+"/media.m3u8", "dedupe", FormatTS, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "dedupe_part1.ts")); string(got) != "ONE" {
+		t.Errorf("recording = %q, want the segment once", got)
+	}
+	if want := srv.URL + "/s1.ts"; res.Last != want {
+		t.Errorf("Last = %q, want %q (without query)", res.Last, want)
 	}
 }

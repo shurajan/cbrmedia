@@ -104,3 +104,42 @@ func writeSampleHLS(t *testing.T, dir string) {
 		}
 	}
 }
+
+func TestPlaylistDurationIsSegmentSum(t *testing.T) {
+	dir := t.TempDir()
+	writeSampleHLS(t, dir)
+
+	pl := &Playlist{Path: filepath.Join(dir, "playlist.m3u8")}
+	if got := pl.Duration(); got != 18 {
+		t.Errorf("Duration() = %d, want 18 (sum of #EXTINF)", got)
+	}
+}
+
+func TestResolutionProbedOncePerVideo(t *testing.T) {
+	defer func(f func(string) string) { probeResolution = f }(probeResolution)
+	calls := 0
+	probeResolution = func(string) string { calls++; return "1280x720" }
+
+	dir := t.TempDir()
+	writeSampleHLS(t, dir)
+	path := filepath.Join(dir, "playlist.m3u8")
+
+	// Каждый GET /videos создаёт новый Playlist: ffprobe должен запуститься один раз.
+	for i := 0; i < 3; i++ {
+		if got := (&Playlist{Path: path}).Resolution(); got != "1280x720" {
+			t.Fatalf("Resolution() = %q", got)
+		}
+	}
+	if calls != 1 {
+		t.Errorf("ffprobe runs = %d, want 1 (cached by playlist path, mtime and size)", calls)
+	}
+
+	// Перезаписанный плейлист (другой размер) пробуется заново.
+	if err := os.WriteFile(path, []byte("#EXTM3U\n#EXTINF:9.000,\nsegment0.ts\n#EXT-X-ENDLIST\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	(&Playlist{Path: path}).Resolution()
+	if calls != 2 {
+		t.Errorf("ffprobe runs = %d, want 2 after the playlist changed", calls)
+	}
+}
