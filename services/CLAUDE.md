@@ -45,6 +45,7 @@
 ```bash
 make test | make check | make build   # из services/ — по всем модулям; из папки модуля — по нему
 ./dev.sh [служба…]                    # собрать и запустить вместе локально (CBR_HOME=~/cbr-dev, DEBUG=1)
+./dev_probe.sh <user|ссылка>          # hlsprobe с настройками dev и готовыми параметрами → hlsprobe-<user>-<время>/ в корне репо
 CBR_HOME=~/cbr-dev make -C tbot run   # одну службу через go run
 ```
 

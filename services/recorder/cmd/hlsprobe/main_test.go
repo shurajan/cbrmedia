@@ -38,7 +38,8 @@ func TestProbeSavesResponses(t *testing.T) {
 	out := t.TempDir()
 	var stdout, stderr bytes.Buffer
 
-	code := run([]string{"-base-url", srv.URL + "/api", "-out", out, "-reloads", "2", "https://site/female/Alice/"}, &stdout, &stderr)
+	code := run([]string{"-base-url", srv.URL + "/api", "-out", out, "-reloads", "2",
+		"-nonexistent", "neverexistinguserbla", "https://site/female/Alice/"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, stderr.String())
 	}
@@ -47,7 +48,7 @@ func TestProbeSavesResponses(t *testing.T) {
 		"status_raw_case", "Alice", "HTTP 404", // регистр и несуществующий пользователь
 		"BANDWIDTH=99 RESOLUTION=1280x720",
 		"reload 0: seq=5", "endlist=true",
-		"segment1", "hls_source changed: false",
+		"segment1", "hls_source changed: false", "neverexistinguserbla",
 	} {
 		if !strings.Contains(summary, want) {
 			t.Errorf("summary lacks %q:\n%s", want, summary)
@@ -67,6 +68,9 @@ func TestProbeNotLive(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "stream is not live") {
+		t.Errorf("summary:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "bobzz0probe404") {
 		t.Errorf("summary:\n%s", stdout.String())
 	}
 }

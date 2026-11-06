@@ -6,7 +6,7 @@
 //
 // Использование:
 //
-//	hlsprobe [-out DIR] [-wait 10m] [-reloads 6] [-segments 3] <user или ссылка>
+//	hlsprobe [-out DIR] [-wait 10m] [-reloads 6] [-segments 3] [-nonexistent NAME] <user или ссылка>
 //
 // base_url и proxy берутся из $CBR_HOME/config/recorder.json (как у recorder),
 // флаги -base-url и -proxy их переопределяют. Всё сохраняется в DIR:
@@ -44,6 +44,7 @@ func main() {
 
 type options struct {
 	out, baseURL, proxy string
+	nonexistent         string // имя, которого точно нет в status API
 	wait                time.Duration
 	reloads, segments   int
 }
@@ -59,6 +60,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&o.out, "out", "", "output dir (default ./hlsprobe-<user>-<time>)")
 	fs.StringVar(&o.baseURL, "base-url", "", "status API base URL (default from recorder.json)")
 	fs.StringVar(&o.proxy, "proxy", "", "HTTP proxy (default from recorder.json)")
+	fs.StringVar(&o.nonexistent, "nonexistent", "", "user that surely does not exist (default <user>zz0probe404)")
 	fs.DurationVar(&o.wait, "wait", 0, "if the stream is not live, poll every 15s up to this long")
 	fs.IntVar(&o.reloads, "reloads", 6, "how many times to reload the media playlist")
 	fs.IntVar(&o.segments, "segments", 3, "how many latest segments to download")
@@ -275,7 +277,11 @@ func (p *probe) run(ctx context.Context, o options, user, raw string) {
 	if upper := strings.ToUpper(user); upper != user && upper != raw {
 		p.status(ctx, "status_upper_case", upper)
 	}
-	p.status(ctx, "status_nonexistent", user+"zz0probe404")
+	fake := o.nonexistent
+	if fake == "" {
+		fake = user + "zz0probe404"
+	}
+	p.status(ctx, "status_nonexistent", fake)
 
 	if info.HLSSource == "" && o.wait > 0 {
 		p.logf("not live, waiting (up to %v)…", o.wait)
