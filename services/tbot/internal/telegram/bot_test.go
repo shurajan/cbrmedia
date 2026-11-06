@@ -245,3 +245,38 @@ func TestForwardEvents(t *testing.T) {
 		t.Errorf("sent = %v", got)
 	}
 }
+
+func callback(fromID int64, data string) *models.Update {
+	return &models.Update{CallbackQuery: &models.CallbackQuery{
+		ID:   "cb",
+		From: models.User{ID: fromID},
+		Data: data,
+	}}
+}
+
+func TestDeleteMenuCallback(t *testing.T) {
+	b, api, db := newTestBot(t)
+	ctx := context.Background()
+	for _, u := range []string{"alice", "bob"} {
+		if err := db.AddUser(ctx, u, AddedBy); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	b.handleCallback(ctx, nil, callback(7, callbackPrefix+"alice"))
+	b.handleCallback(ctx, nil, callback(ownerID, callbackPrefix+"alice"))
+	b.handleCallback(ctx, nil, callback(ownerID, callbackPrefix+"alice"))
+	b.handleCallback(ctx, nil, callback(ownerID, callbackPrefix+"bob"))
+
+	want := []string{
+		"Access denied.",
+		"User alice removed successfully.",
+		"Select user to delete:", // меню обновляется: остался bob
+		"Error removing alice: user not found",
+		"User bob removed successfully.",
+		"All users have been removed.",
+	}
+	if got := api.sent(); !slices.Equal(got, want) {
+		t.Errorf("sent =\n%q\nwant\n%q", got, want)
+	}
+}

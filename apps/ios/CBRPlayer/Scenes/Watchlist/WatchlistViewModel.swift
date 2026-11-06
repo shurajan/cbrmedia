@@ -41,7 +41,7 @@ final class WatchlistViewModel: ObservableObject {
     /// Имя, которое будет добавлено: из поля ввода или из вставленной ссылки.
     var resolvedNewUser: String? { Self.userName(from: newUser) }
 
-    /// Ввод — ссылка, и из неё удалось достать имя: показываем, кого добавим.
+    /// Итоговое имя отличается от ввода (ссылка или заглавные буквы): показываем, кого добавим.
     var linkHint: String? {
         guard let user = resolvedNewUser, user != trimmedNewUser else { return nil }
         return user
@@ -51,16 +51,17 @@ final class WatchlistViewModel: ObservableObject {
 
     /// Имя пользователя из ввода: имя как есть или ссылка на его страницу, где имя —
     /// последний непустой сегмент пути (`https://site/<user>`, `https://site/<раздел>/<user>/`).
-    /// Схема необязательна, query и fragment отбрасываются. Те же правила —
+    /// Схема необязательна, query и fragment отбрасываются, имя приводится к нижнему
+    /// регистру (`Alice` и `alice` — один пользователь). Те же правила —
     /// `store.UserFromInput` в services/core; допустимость имени проверяет сервер.
     static func userName(from input: String) -> String? {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
-        guard text.contains("/") else { return text }
+        guard text.contains("/") else { return text.lowercased() }
 
         let link = text.contains("://") ? text : "https://" + text
         guard let path = URLComponents(string: link)?.path else { return nil }
-        return path.split(separator: "/").last.map(String.init)
+        return path.split(separator: "/").last.map { $0.lowercased() }
     }
 
     /// Загружает список. `silent` — без индикатора загрузки (фоновое обновление статусов).

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -292,8 +293,9 @@ func TestRecordStopsWhenPlaylistGone(t *testing.T) {
 	r := &Recorder{Client: srv.Client(), Dir: t.TempDir(), Log: discard}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := r.Record(ctx, srv.URL+"/media.m3u8", "x", FormatTS); err != nil {
-		t.Fatalf("Record returned %v, want nil when stream is gone", err)
+	// Стрим закончился, не дав ни одного сегмента, — для recorder это неудачная попытка.
+	if err := r.Record(ctx, srv.URL+"/media.m3u8", "x", FormatTS); !errors.Is(err, ErrNoSegments) {
+		t.Fatalf("Record returned %v, want ErrNoSegments", err)
 	}
 	if ctx.Err() != nil {
 		t.Fatal("Record did not stop on 404")
@@ -565,5 +567,90 @@ func TestPartFileIsPrivate(t *testing.T) {
 	}
 	if perm := info.Mode().Perm(); perm&0o077 != 0 {
 		t.Errorf("part file mode = %o, want no group/other access", perm)
+	}
+}
+
+// stalledBody начинает ответ и не дописывает его, пока клиент не отключится.
+func stalledBody(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, "#EXTM3U\n#EXTINF:1,\nseg")
+	w.(http.Flusher).Flush()
+	<-r.Context().Done()
+}
+
+func TestFetchTimesOutOnStalledBody(t *testing.T) {
+	defer func(p, s time.Duration) { playlistTimeout, segmentTimeout = p, s }(playlistTimeout, segmentTimeout)
+	playlistTimeout, segmentTimeout = 100*time.Millisecond, 100*time.Millisecond
+
+	srv := httptest.NewServer(http.HandlerFunc(stalledBody))
+	defer srv.Close()
+	ctx := context.Background()
+
+	start := time.Now()
+	if _, err := fetch(ctx, srv.Client(), srv.URL); err == nil {
+		t.Error("fetch: expected error for a stalled body")
+	}
+	// Оборванный плейлист нельзя разбирать: последняя строка — обрезанный URI сегмента.
+	if text, _, err := fetchText(ctx, srv.Client(), srv.URL); err == nil {
+		t.Errorf("fetchText: expected error, got %q", text)
+	}
+	if took := time.Since(start); took > 2*time.Second {
+		t.Errorf("took %v, timeouts ignored", took)
+	}
+}
+
+// orderedStream отдаёт плейлист s1, s2 (на третьей перезагрузке — с ENDLIST);
+// первые s1Failures запросов s1 падают.
+func orderedStream(t *testing.T, s1Failures int32) *httptest.Server {
+	t.Helper()
+	var s1Calls, reloads atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/media.m3u8":
+			end := ""
+			if reloads.Add(1) > s1Failures+1 {
+				end = "#EXT-X-ENDLIST\n"
+			}
+			fmt.Fprint(w, "#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1,\ns1.ts\n#EXTINF:1,\ns2.ts\n"+end)
+		case "/s1.ts":
+			if s1Calls.Add(1) <= s1Failures {
+				http.Error(w, "busy", http.StatusServiceUnavailable)
+				return
+			}
+			fmt.Fprint(w, "A")
+		case "/s2.ts":
+			fmt.Fprint(w, "B")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestRecordKeepsSegmentOrderOnRetry(t *testing.T) {
+	srv := orderedStream(t, 1)
+	dir := t.TempDir()
+	r := &Recorder{Client: srv.Client(), Dir: dir, Log: discard, retryDelay: 10 * time.Millisecond}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := r.Record(ctx, srv.URL+"/media.m3u8", "order", FormatTS); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "order_part1.ts")); string(got) != "AB" {
+		t.Errorf("recording = %q, want segments in playlist order", got)
+	}
+}
+
+func TestRecordSkipsSegmentAfterRepeatedFailures(t *testing.T) {
+	srv := orderedStream(t, maxSegmentAttempts)
+	dir := t.TempDir()
+	r := &Recorder{Client: srv.Client(), Dir: dir, Log: discard, retryDelay: 10 * time.Millisecond}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := r.Record(ctx, srv.URL+"/media.m3u8", "skip", FormatTS); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "skip_part1.ts")); string(got) != "B" {
+		t.Errorf("recording = %q, want the broken segment skipped", got)
 	}
 }

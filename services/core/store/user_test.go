@@ -18,6 +18,8 @@ func TestUserFromInput(t *testing.T) {
 		"someadress.com/alice/":                "alice",
 		"https://someadress.com//alice//":      "alice",
 		"https://someadress.com/al_i.ce-1":     "al_i.ce-1",
+		"Alice":                                "alice",
+		"https://SomeAdress.com/Female/BOB/":   "bob",
 	}
 	for in, want := range ok {
 		got, err := UserFromInput(in)

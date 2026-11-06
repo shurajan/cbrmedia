@@ -6,6 +6,7 @@ package hls
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -120,8 +121,18 @@ func (r *Recorder) DetectFormat(ctx context.Context, rawURL string) Format {
 	return FormatTS
 }
 
+// ErrNoSegments — запись закончилась, не записав ни одного сегмента: плейлист
+// сразу недоступен, пуст или застыл. Для recorder это неудачная попытка.
+var ErrNoSegments = errors.New("no segments recorded")
+
+// maxSegmentAttempts — сколько раз подряд пробовать скачать сегмент, прежде чем
+// пропустить его. Пока сегмент повторяется, следующие за ним ждут, чтобы
+// в файл они попали по порядку.
+const maxSegmentAttempts = 3
+
 // Record записывает живой стрим masterURL в файлы <baseName>_part<N>.<ext>
-// до конца стрима или отмены ctx. Отмена ctx не считается ошибкой.
+// до конца стрима или отмены ctx. Отмена ctx не считается ошибкой. Если стрим
+// закончился, а записать не удалось ничего, возвращает ErrNoSegments.
 func (r *Recorder) Record(ctx context.Context, masterURL, baseName string, f Format) error {
 	log := r.logger().With("recording", baseName)
 
@@ -137,17 +148,6 @@ func (r *Recorder) Record(ctx context.Context, masterURL, baseName string, f For
 	if rotateAfter <= 0 {
 		rotateAfter = DefaultRotateAfter
 	}
-	retryDelay := r.retryDelay
-	if retryDelay <= 0 {
-		retryDelay = 3 * time.Second
-	}
-
-	stallTimeout := r.StallTimeout
-	if stallTimeout <= 0 {
-		stallTimeout = DefaultStallTimeout
-	}
-
-	keys := make(map[string][]byte) // URI ключа -> ключ
 	w := &segmentWriter{
 		dir:         r.Dir,
 		baseName:    baseName,
@@ -158,15 +158,36 @@ func (r *Recorder) Record(ctx context.Context, masterURL, baseName string, f For
 	defer w.close()
 
 	log.Info("native HLS recorder started", "playlist", mediaURL, "ext", f.Ext)
+	if err := r.download(ctx, log, mediaURL, w); err != nil {
+		return err
+	}
+	if w.segments == 0 && ctx.Err() == nil {
+		return ErrNoSegments
+	}
+	return nil
+}
 
-	seen := make(map[string]bool)
+// download перезагружает media-плейлист и пишет новые сегменты в w до конца
+// стрима или отмены ctx. Ошибка — только если не удалось записать на диск.
+func (r *Recorder) download(ctx context.Context, log *slog.Logger, mediaURL string, w *segmentWriter) error {
+	retryDelay := r.retryDelay
+	if retryDelay <= 0 {
+		retryDelay = 3 * time.Second
+	}
+	stallTimeout := r.StallTimeout
+	if stallTimeout <= 0 {
+		stallTimeout = DefaultStallTimeout
+	}
+
+	keys := make(map[string][]byte) // URI ключа -> ключ
+	seen := make(map[string]bool)   // записанные или пропущенные сегменты
+	failures := make(map[string]int)
 	errStreak := 0
 	lastProgress := time.Now() // время последнего записанного сегмента
 	var targetDuration float64
 
 	for {
-		if ctx.Err() != nil {
-			log.Info("download stopped")
+		if stopped(ctx, log) {
 			return nil
 		}
 
@@ -206,39 +227,49 @@ func (r *Recorder) Record(ctx context.Context, masterURL, baseName string, f For
 		targetDuration = pl.targetDuration
 
 		newCount := 0
-		initFailed := false
+		// retry — проход прерван на сегменте или init, которые надо повторить:
+		// остальные сегменты ждут, чтобы не нарушить порядок в файле.
+		retry := false
 		for _, seg := range pl.segments {
 			if seen[seg.uri] {
 				continue
 			}
-			if ctx.Err() != nil {
-				log.Info("download stopped")
+			if stopped(ctx, log) {
 				return nil
 			}
 
 			// Init-сегмент fMP4 (общий заголовок для последующих фрагментов).
 			// Без него фрагменты непроигрываемы, поэтому при ошибке сегменты не
-			// пишутся и не помечаются как увиденные — повтор при следующей
-			// перезагрузке плейлиста.
+			// пишутся — повтор при следующей перезагрузке плейлиста.
 			if seg.mapURI != "" && seg.mapURI != w.initURI {
 				initData, err := fetch(ctx, r.Client, seg.mapURI)
 				if err != nil {
 					log.Warn("fetch init segment", "uri", seg.mapURI, "err", err)
-					initFailed = true
+					retry = true
 					break
 				}
 				w.setInit(seg.mapURI, initData)
 			}
-			seen[seg.uri] = true
 
 			data, err := downloadSegment(ctx, r.Client, keys, seg)
 			if err != nil {
-				// Снимаем отметку, чтобы повторить сегмент, пока он остаётся
-				// в окне живого плейлиста.
-				delete(seen, seg.uri)
-				log.Warn("segment download failed", "uri", seg.uri, "err", err)
+				if stopped(ctx, log) {
+					return nil
+				}
+				failures[seg.uri]++
+				if failures[seg.uri] < maxSegmentAttempts {
+					log.Warn("segment download failed, retrying", "uri", seg.uri,
+						"attempt", failures[seg.uri], "err", err)
+					retry = true
+					break
+				}
+				log.Warn("segment skipped after repeated failures", "uri", seg.uri, "err", err)
+				delete(failures, seg.uri)
+				seen[seg.uri] = true
 				continue
 			}
+			delete(failures, seg.uri)
+			seen[seg.uri] = true
 			if err := w.write(data, seg.duration); err != nil {
 				return fmt.Errorf("writing segment: %w", err)
 			}
@@ -246,9 +277,9 @@ func (r *Recorder) Record(ctx context.Context, masterURL, baseName string, f For
 			lastProgress = time.Now()
 		}
 
-		if initFailed {
-			// Оставшиеся сегменты ждут init — повторяем, даже если плейлист
-			// закрыт #EXT-X-ENDLIST; бесконечный повтор ограничен таймаутом застоя.
+		if retry {
+			// Повторяем, даже если плейлист закрыт #EXT-X-ENDLIST; init повторяется
+			// без счётчика, бесконечный повтор ограничен таймаутом застоя.
 			if ctxutil.Sleep(ctx, retryDelay) {
 				log.Info("download stopped")
 				return nil
@@ -266,6 +297,15 @@ func (r *Recorder) Record(ctx context.Context, masterURL, baseName string, f For
 			return nil
 		}
 	}
+}
+
+// stopped сообщает, что запись остановлена отменой ctx (это не ошибка).
+func stopped(ctx context.Context, log *slog.Logger) bool {
+	if ctx.Err() == nil {
+		return false
+	}
+	log.Info("download stopped")
+	return true
 }
 
 // stallLimit — таймаут застоя с учётом target duration плейлиста.
@@ -322,8 +362,19 @@ func downloadSegment(ctx context.Context, client *http.Client, keys map[string][
 	return decryptAES128(data, key, iv)
 }
 
-// fetch загружает тело ответа целиком; не-2xx считается ошибкой.
+// Таймауты одного запроса к CDN. Транспорт ограничивает только соединение и
+// заголовки, а без этих пределов зависшее на середине тело ответа остановило бы
+// запись навсегда: проверка застоя в цикле Record до него не дойдёт.
+// Переменные — чтобы тесты могли их сократить.
+var (
+	playlistTimeout = 15 * time.Second
+	segmentTimeout  = time.Minute // сегменты, ключи, init
+)
+
+// fetch загружает тело ответа целиком (не дольше segmentTimeout); не-2xx считается ошибкой.
 func fetch(ctx context.Context, client *http.Client, rawURL string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, segmentTimeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
@@ -339,8 +390,12 @@ func fetch(ctx context.Context, client *http.Client, rawURL string) ([]byte, err
 	return io.ReadAll(resp.Body)
 }
 
-// fetchText загружает текст (до 4 МБ) и возвращает HTTP-статус для анализа ошибок.
+// fetchText загружает текст (до 4 МБ, не дольше playlistTimeout) и возвращает
+// HTTP-статус для анализа ошибок. Недочитанное тело — ошибка: обрезанный
+// плейлист дал бы сегмент с битым URI.
 func fetchText(ctx context.Context, client *http.Client, rawURL string) (string, int, error) {
+	ctx, cancel := context.WithTimeout(ctx, playlistTimeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return "", 0, err
@@ -350,9 +405,12 @@ func fetchText(ctx context.Context, client *http.Client, rawURL string) (string,
 		return "", 0, err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4*1024*1024))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", resp.StatusCode, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4*1024*1024))
+	if err != nil {
+		return "", 0, fmt.Errorf("read %s: %w", rawURL, err)
 	}
 	return string(body), resp.StatusCode, nil
 }

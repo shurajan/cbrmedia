@@ -34,6 +34,7 @@ type segmentWriter struct {
 	tmpPath       string // путь к записываемому .download-файлу
 	finPath       string // путь, в который он переименовывается по завершении part
 	elapsed       float64
+	segments      int // сколько сегментов записано за всю запись
 }
 
 // setInit задаёт init-сегмент fMP4. Если содержимое init изменилось, а part
@@ -61,6 +62,7 @@ func (w *segmentWriter) write(data []byte, dur float64) error {
 		return err
 	}
 	w.elapsed += dur
+	w.segments++
 	return nil
 }
 

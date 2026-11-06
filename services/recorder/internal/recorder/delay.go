@@ -10,23 +10,30 @@ import (
 type timing struct {
 	initialDelay   time.Duration // пауза перед первым запросом
 	restoreStagger time.Duration // пауза между восстановлением пользователей при старте
-	techFailure    time.Duration // после 5xx или сетевой ошибки
+	techFailure    time.Duration // после 5xx или сетевой ошибки; предел для Retry-After
+	rateLimited    time.Duration // после 429 без Retry-After
 	otherFailure   time.Duration // после прочих ошибок (например, некорректный JSON)
 	publicDelay    time.Duration // комната public
 	activeDelay    time.Duration // пользователь онлайн, но стрим недоступен
 	offlineDelay   time.Duration // все остальные статусы
 	dailyDelay     time.Duration // пользователь не найден (404/410) или доступ запрещён (401/403)
+	// longRecording — после записи не короче этой опрашиваем сразу (стрим мог
+	// оборваться на середине); после короткой — обычная пауза, иначе законченный
+	// плейлист, который CDN ещё отдаёт, скачивался бы снова и снова без перерыва.
+	longRecording time.Duration
 }
 
 var defaultTiming = timing{
 	initialDelay:   5 * time.Second,
 	restoreStagger: 5 * time.Second,
 	techFailure:    20 * time.Minute,
+	rateLimited:    2 * time.Minute,
 	otherFailure:   3 * time.Minute,
 	publicDelay:    15 * time.Second,
 	activeDelay:    time.Minute,
 	offlineDelay:   15 * time.Minute,
 	dailyDelay:     24 * time.Hour,
+	longRecording:  time.Minute,
 }
 
 // failureAction — что делать после ошибки status API.
@@ -58,6 +65,25 @@ func classifyFailure(status int) failureAction {
 		return actionDisable
 	}
 	return actionRetry
+}
+
+// rateLimitDelay — пауза после 429: Retry-After, но не дольше techFailure; без него — rateLimited.
+func (t timing) rateLimitDelay(retryAfter time.Duration) time.Duration {
+	if retryAfter <= 0 {
+		return t.rateLimited
+	}
+	return min(retryAfter, t.techFailure)
+}
+
+// recordRetryDelay — пауза после n-й подряд неудачной попытки записи (стрим
+// объявлен, но плейлист недоступен): publicDelay, затем вдвое больше, но не
+// дольше offlineDelay. Без неё recorder пробовал бы каждые publicDelay.
+func (t timing) recordRetryDelay(n int) time.Duration {
+	d := t.publicDelay
+	for i := 1; i < n && d < t.offlineDelay; i++ {
+		d *= 2
+	}
+	return min(d, t.offlineDelay)
 }
 
 // activeStatuses — статусы, при которых пользователь онлайн, но публичного стрима нет.

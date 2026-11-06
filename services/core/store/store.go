@@ -88,6 +88,11 @@ var migrations = []string{
 	// Уже добавленные к моменту миграции считаются подтверждёнными.
 	`ALTER TABLE watchlist ADD COLUMN verified INTEGER NOT NULL DEFAULT 0;
 	UPDATE watchlist SET verified = 1;`,
+	// Имена в нижнем регистре (UserFromInput): Alice и alice — один пользователь.
+	// Из дубликатов остаётся один; состояние recorder пересоздаст.
+	`UPDATE OR IGNORE watchlist SET user = lower(user) WHERE user <> lower(user);
+	DELETE FROM watchlist WHERE user <> lower(user);
+	DELETE FROM watch_state WHERE user <> lower(user);`,
 }
 
 // Store — подключение к общей базе. Безопасен для конкурентного использования.

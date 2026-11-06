@@ -24,6 +24,7 @@ var fastTiming = timing{
 	initialDelay:   time.Millisecond,
 	restoreStagger: time.Millisecond,
 	techFailure:    5 * time.Millisecond,
+	rateLimited:    5 * time.Millisecond,
 	otherFailure:   5 * time.Millisecond,
 	publicDelay:    5 * time.Millisecond,
 	activeDelay:    5 * time.Millisecond,
@@ -61,6 +62,7 @@ type fakeRecorder struct {
 	mu    sync.Mutex
 	calls []recordCall
 	done  chan struct{}
+	err   error // что возвращает Record
 }
 
 func (f *fakeRecorder) DetectFormat(context.Context, string) hls.Format { return hls.FormatMP4 }
@@ -73,7 +75,13 @@ func (f *fakeRecorder) Record(_ context.Context, url, baseName string, format hl
 	if first && f.done != nil {
 		close(f.done)
 	}
-	return nil
+	return f.err
+}
+
+func (f *fakeRecorder) callCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.calls)
 }
 
 // fakeSink запоминает события, выключенных пользователей и последнее состояние.
@@ -461,5 +469,242 @@ func TestNewHTTPClientRejectsBadProxy(t *testing.T) {
 	}
 	if _, err := NewHTTPClient("", discard); err != nil {
 		t.Errorf("no proxy: %v", err)
+	}
+}
+
+func TestWatchTechnicalFailuresKeepUser(t *testing.T) {
+	// 5xx, сетевая ошибка, 429 и битый JSON — временные: пользователь остаётся, затем опрос идёт дальше.
+	status := &fakeStatus{responses: []statusResponse{
+		{status: 503, err: errors.New("unavailable")},
+		{status: 0, err: errors.New("connection refused")},
+		{status: 429, err: errors.New("too many requests")},
+		{status: 200, err: errors.New("decode JSON")},
+		{room: Room{Status: "offline"}, status: 200},
+	}}
+	m, sink := newTestManager(status, &fakeRecorder{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m.Sync(ctx, []string{"alice"})
+
+	waitFor(t, func() bool { return sink.room("alice") == "offline" })
+	cancel()
+	m.Wait()
+
+	if len(sink.removed) != 0 || len(sink.disabled) != 0 || len(sink.kinds()) != 0 {
+		t.Errorf("removed = %v, disabled = %v, events = %v", sink.removed, sink.disabled, sink.kinds())
+	}
+	if !sink.isVerified("alice") {
+		t.Error("user must be verified after the first successful response")
+	}
+}
+
+func TestWatchSkipsRecordingWhenRefreshFails(t *testing.T) {
+	// Свежий URL получить не удалось или стрим уже закончился — запись не начинается.
+	status := &fakeStatus{responses: []statusResponse{
+		{room: Room{Status: "public", HLSURL: "https://cdn/a.m3u8"}, status: 200},
+		{status: 502, err: errors.New("bad gateway")},
+		{room: Room{Status: "public", HLSURL: "https://cdn/b.m3u8"}, status: 200},
+		{room: Room{Status: "public"}, status: 200},
+		{room: Room{Status: "offline"}, status: 200},
+	}}
+	rec := &fakeRecorder{}
+	m, sink := newTestManager(status, rec)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m.Sync(ctx, []string{"bob"})
+
+	waitFor(t, func() bool { return sink.room("bob") == "offline" })
+	cancel()
+	m.Wait()
+
+	if n := rec.callCount(); n != 0 {
+		t.Errorf("Record called %d times, want 0", n)
+	}
+	if kinds := sink.kinds(); len(kinds) != 0 {
+		t.Errorf("events = %v", kinds)
+	}
+}
+
+func TestWatchRecordingFailureEmitsEvent(t *testing.T) {
+	status := &fakeStatus{responses: []statusResponse{
+		{room: Room{Status: "public", HLSURL: "https://cdn/a.m3u8"}, status: 200},
+		{room: Room{Status: "public", HLSURL: "https://cdn/a.m3u8"}, status: 200},
+		{room: Room{Status: "offline"}, status: 200},
+	}}
+	rec := &fakeRecorder{err: errors.New("disk full")}
+	m, sink := newTestManager(status, rec)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m.Sync(ctx, []string{"bob"})
+
+	waitFor(t, func() bool { return len(sink.kinds()) >= 2 })
+	cancel()
+	m.Wait()
+
+	if kinds := sink.kinds(); kinds[0] != store.KindRecordingStarted || kinds[1] != store.KindRecordingFailed {
+		t.Errorf("events = %v", kinds)
+	}
+	if sink.events[1].Message != "Recording bob failed: disk full" {
+		t.Errorf("message = %q", sink.events[1].Message)
+	}
+}
+
+func TestStatusClientTruncatesErrorBody(t *testing.T) {
+	page := strings.Repeat("<html>", 1000)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, page, http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	_, status, err := NewStatusClient(srv.Client(), srv.URL).Fetch(context.Background(), "x")
+	if status != http.StatusForbidden || err == nil {
+		t.Fatalf("status = %d, err = %v", status, err)
+	}
+	if len(err.Error()) > errorBodyLimit+200 {
+		t.Errorf("error message is %d bytes, body must be truncated", len(err.Error()))
+	}
+}
+
+func TestStatusClientTimesOutOnStalledBody(t *testing.T) {
+	defer func(d time.Duration) { statusTimeout = d }(statusTimeout)
+	statusTimeout = 100 * time.Millisecond
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"room_status":`)
+		w.(http.Flusher).Flush()
+		<-r.Context().Done() // тело так и не дописывается
+	}))
+	defer srv.Close()
+
+	start := time.Now()
+	_, _, err := NewStatusClient(srv.Client(), srv.URL).Fetch(context.Background(), "x")
+	if err == nil {
+		t.Fatal("expected error for a stalled response")
+	}
+	if took := time.Since(start); took > 2*time.Second {
+		t.Errorf("Fetch took %v, timeout ignored", took)
+	}
+}
+
+// liveStatus — комната всё время public с hls_source.
+func liveStatus() *fakeStatus {
+	return &fakeStatus{responses: []statusResponse{
+		{room: Room{Status: "public", HLSURL: "https://cdn/a.m3u8"}, status: 200},
+	}}
+}
+
+// recordCallsWithin запускает слежение за bob и возвращает число вызовов Record за d.
+func recordCallsWithin(t *testing.T, m *Manager, rec *fakeRecorder, d time.Duration) int {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	m.Sync(ctx, []string{"bob"})
+	time.Sleep(d)
+	cancel()
+	m.Wait()
+	return rec.callCount()
+}
+
+func TestWatchBacksOffAfterFailedRecordings(t *testing.T) {
+	// Стрим объявлен, но записать не выходит: паузы 20, 40, 80, 160 мс… вместо 20 мс каждый раз.
+	rec := &fakeRecorder{err: errors.New("playlist 403")}
+	m, _ := newTestManager(liveStatus(), rec)
+	m.timing.publicDelay = 20 * time.Millisecond
+	m.timing.offlineDelay = time.Hour
+	m.timing.longRecording = time.Hour
+
+	if n := recordCallsWithin(t, m, rec, 400*time.Millisecond); n < 2 || n > 6 {
+		t.Errorf("Record called %d times in 400ms, want 2..6 with backoff", n)
+	}
+}
+
+func TestWatchRepollsRightAfterLongRecording(t *testing.T) {
+	rec := &fakeRecorder{}
+	m, _ := newTestManager(liveStatus(), rec)
+	m.timing.publicDelay = time.Hour // обычная пауза не наступит
+	m.timing.longRecording = 0       // любая запись считается долгой
+
+	if n := recordCallsWithin(t, m, rec, 200*time.Millisecond); n < 2 {
+		t.Errorf("Record called %d times, want an immediate new recording after a long one", n)
+	}
+}
+
+func TestWatchWaitsAfterShortRecording(t *testing.T) {
+	rec := &fakeRecorder{}
+	m, _ := newTestManager(liveStatus(), rec)
+	m.timing.publicDelay = time.Hour
+	m.timing.longRecording = time.Hour
+
+	if n := recordCallsWithin(t, m, rec, 200*time.Millisecond); n != 1 {
+		t.Errorf("Record called %d times, want 1: short recording waits for the usual delay", n)
+	}
+}
+
+func TestWatchRateLimitUsesRetryAfter(t *testing.T) {
+	status := &fakeStatus{responses: []statusResponse{
+		{status: 429, err: &StatusError{Code: 429, RetryAfter: time.Hour, msg: "slow down"}},
+		{room: Room{Status: "offline"}, status: 200},
+	}}
+	m, sink := newTestManager(status, &fakeRecorder{})
+	m.timing.techFailure = 30 * time.Millisecond // предел для Retry-After
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m.Sync(ctx, []string{"alice"})
+	waitFor(t, func() bool { return sink.room("alice") == "offline" })
+}
+
+func TestRecordRetryDelay(t *testing.T) {
+	want := []time.Duration{15 * time.Second, 30 * time.Second, time.Minute, 2 * time.Minute,
+		4 * time.Minute, 8 * time.Minute, 15 * time.Minute, 15 * time.Minute}
+	for i, w := range want {
+		if got := defaultTiming.recordRetryDelay(i + 1); got != w {
+			t.Errorf("recordRetryDelay(%d) = %v, want %v", i+1, got, w)
+		}
+	}
+}
+
+func TestRateLimitDelay(t *testing.T) {
+	cases := map[time.Duration]time.Duration{
+		0:                defaultTiming.rateLimited,
+		30 * time.Second: 30 * time.Second,
+		time.Hour:        defaultTiming.techFailure,
+	}
+	for ra, want := range cases {
+		if got := defaultTiming.rateLimitDelay(ra); got != want {
+			t.Errorf("rateLimitDelay(%v) = %v, want %v", ra, got, want)
+		}
+	}
+}
+
+func TestParseRetryAfter(t *testing.T) {
+	now := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	cases := map[string]time.Duration{
+		"":                              0,
+		"120":                           2 * time.Minute,
+		"-5":                            0,
+		"soon":                          0,
+		"Fri, 06 Nov 2026 12:01:30 GMT": 90 * time.Second,
+		"Fri, 06 Nov 2026 11:00:00 GMT": 0,
+	}
+	for v, want := range cases {
+		if got := parseRetryAfter(v, now); got != want {
+			t.Errorf("parseRetryAfter(%q) = %v, want %v", v, got, want)
+		}
+	}
+}
+
+func TestStatusClientReturnsRetryAfter(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "42")
+		http.Error(w, "slow down", http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	_, status, err := NewStatusClient(srv.Client(), srv.URL).Fetch(context.Background(), "x")
+	if status != http.StatusTooManyRequests || retryAfter(err) != 42*time.Second {
+		t.Errorf("status = %d, retryAfter = %v, err = %v", status, retryAfter(err), err)
 	}
 }

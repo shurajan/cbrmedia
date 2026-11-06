@@ -27,7 +27,8 @@ func (m *Manager) watch(ctx context.Context, user string, initialDelay time.Dura
 	// verified — status API хоть раз ответил о пользователе успешно (хранится в базе).
 	// Неподтверждённого 404/410 удаляет сразу: такого пользователя, скорее всего, нет вовсе.
 	verified := m.verified(ctx, user)
-	notFound := 0 // ответов 404/410 подряд
+	notFound := 0         // ответов 404/410 подряд
+	failedRecordings := 0 // неудачных попыток записи подряд
 	for {
 		if ctx.Err() != nil {
 			return
@@ -64,10 +65,15 @@ func (m *Manager) watch(ctx context.Context, user string, initialDelay time.Dura
 				m.setState(ctx, user, store.RoomBlocked, false)
 				log.Warn("access denied, checking again later", "status", status, "backoff", backoff)
 			default:
-				backoff = m.timing.otherFailure
-				if status >= http.StatusInternalServerError || status == 0 || status == http.StatusTooManyRequests {
+				switch {
+				case status == http.StatusTooManyRequests:
+					backoff = m.timing.rateLimitDelay(retryAfter(err))
+					log.Warn("rate limited, backing off", "backoff", backoff)
+				case status >= http.StatusInternalServerError || status == 0:
 					backoff = m.timing.techFailure
 					log.Warn("technical failure, backing off", "status", status, "backoff", backoff)
+				default:
+					backoff = m.timing.otherFailure
 				}
 			}
 			if ctxutil.Sleep(ctx, backoff) {
@@ -83,9 +89,29 @@ func (m *Manager) watch(ctx context.Context, user string, initialDelay time.Dura
 		log.Info("room status", "status", room.Status)
 		m.setState(ctx, user, room.Status, false)
 
-		if room.HLSURL != "" && !m.record(ctx, user, room.HLSURL) {
-			// Свежий URL получить не удалось — сразу опрашиваем снова, чтобы не пропустить начало стрима.
-			continue
+		if room.HLSURL == "" {
+			failedRecordings = 0
+		} else {
+			switch m.record(ctx, user, room.HLSURL) {
+			case recordSkipped:
+				// Свежий URL получить не удалось — сразу опрашиваем снова, чтобы не пропустить начало стрима.
+				continue
+			case recordDone:
+				// После долгой записи сразу опрашиваем снова: она могла оборваться
+				// посреди стрима (например, истёк CDN-токен), продолжение пойдёт в новый файл.
+				failedRecordings = 0
+				continue
+			case recordShort:
+				failedRecordings = 0
+			case recordFailed:
+				failedRecordings++
+				delay := m.timing.recordRetryDelay(failedRecordings)
+				log.Warn("recording failed, retrying later", "attempt", failedRecordings, "delay", delay)
+				if ctxutil.Sleep(ctx, delay) {
+					return
+				}
+				continue
+			}
 		}
 
 		delay := m.timing.delayFor(room.Status)
@@ -156,10 +182,19 @@ func (m *Manager) disable(ctx context.Context, user string, status int) {
 	m.log.Warn("user disabled", "user", user, "status", status)
 }
 
+// recordResult — итог попытки записи.
+type recordResult int
+
+const (
+	recordSkipped recordResult = iota // свежий URL получить не удалось, запись не начиналась
+	recordDone                        // запись не короче longRecording завершилась (или слежение остановлено)
+	recordShort                       // запись завершилась быстрее longRecording
+	recordFailed                      // запись не удалась (в том числе hls.ErrNoSegments)
+)
+
 // record определяет формат по первому URL, затем берёт свежий URL (чтобы
 // CDN-токен не был использован к началу записи) и записывает стрим.
-// Возвращает false, если запись не началась из-за неудачи с получением свежего URL.
-func (m *Manager) record(ctx context.Context, user, streamURL string) bool {
+func (m *Manager) record(ctx context.Context, user, streamURL string) recordResult {
 	log := m.log.With("user", user)
 	baseName := fmt.Sprintf("%s_%s", user, time.Now().Format("2006-01-02_15-04"))
 
@@ -169,11 +204,11 @@ func (m *Manager) record(ctx context.Context, user, streamURL string) bool {
 	fresh, status, err := m.status.Fetch(ctx, user)
 	if err != nil {
 		log.Warn("refresh stream URL failed", "status", status, "err", err)
-		return false
+		return recordSkipped
 	}
 	if fresh.HLSURL == "" {
 		log.Info("stream ended before download could start")
-		return false
+		return recordSkipped
 	}
 
 	file := baseName + "." + format.Ext
@@ -181,12 +216,14 @@ func (m *Manager) record(ctx context.Context, user, streamURL string) bool {
 	m.setState(ctx, user, fresh.Status, true)
 	m.event(ctx, store.KindRecordingStarted, user, fmt.Sprintf("Recording %s started: %s", user, file))
 
+	started := time.Now()
 	err = m.rec.Record(ctx, fresh.HLSURL, baseName, format)
 	m.setState(ctx, user, fresh.Status, false)
 	switch {
 	case err != nil:
 		log.Error("download failed", "file", file, "err", err)
 		m.event(ctx, store.KindRecordingFailed, user, fmt.Sprintf("Recording %s failed: %v", user, err))
+		return recordFailed
 	case ctx.Err() != nil:
 		log.Info("download stopped", "file", file)
 		m.event(ctx, store.KindRecordingFinished, user, fmt.Sprintf("Recording %s stopped: %s", user, file))
@@ -194,5 +231,8 @@ func (m *Manager) record(ctx context.Context, user, streamURL string) bool {
 		log.Info("download finished", "file", file)
 		m.event(ctx, store.KindRecordingFinished, user, fmt.Sprintf("Recording %s finished: %s", user, file))
 	}
-	return true
+	if ctx.Err() == nil && time.Since(started) < m.timing.longRecording {
+		return recordShort
+	}
+	return recordDone
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -223,5 +224,47 @@ func TestMigrationMarksExistingUsersVerified(t *testing.T) {
 	_ = s.AddUser(ctx, "new", "api")
 	if ok, _ := s.Verified(ctx, "new"); ok {
 		t.Fatal("new user must not be verified")
+	}
+}
+
+func TestMigrationLowercasesUsers(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "cbr.db")
+
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		migrations[0],
+		migrations[1],
+		`PRAGMA user_version = 2`,
+		`INSERT INTO watchlist (user, added_at) VALUES ('Alice', 0), ('alice', 0), ('BOB', 0), ('Bob', 0), ('carol', 0)`,
+		`INSERT INTO watch_state (user, updated_at) VALUES ('BOB', 1), ('carol', 1)`,
+	} {
+		if _, err := db.ExecContext(ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = db.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	entries, err := s.Users(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var users []string
+	for _, e := range entries {
+		users = append(users, e.User)
+	}
+	if fmt.Sprint(users) != "[alice bob carol]" {
+		t.Errorf("users = %v, want [alice bob carol]", users)
+	}
+	if entries[2].StateAt.IsZero() {
+		t.Error("carol's state must be kept")
 	}
 }

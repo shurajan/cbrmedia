@@ -111,6 +111,8 @@ struct WatchlistViewModelTests {
         ("https://someadress.com/female/alice/", "alice"),
         ("https://someadress.com/alice/?tab=1#bio", "alice"),
         ("someadress.com/alice/", "alice"),
+        ("Alice", "alice"),
+        ("https://SomeAdress.com/Female/Bob/", "bob"),
     ])
     func userNameFromInput(input: String, expected: String) {
         #expect(WatchlistViewModel.userName(from: input) == expected)
@@ -139,6 +141,8 @@ struct WatchlistViewModelTests {
         let vm = WatchlistViewModel(service: FakeWatchlistService())
         vm.newUser = "alice"
         #expect(vm.linkHint == nil)
+        vm.newUser = "Alice"
+        #expect(vm.linkHint == "alice") // имя сохранится в нижнем регистре — показываем это
     }
 
     /// Отклонённый пользователь, которого фоновое обновление успело показать, исчезает сразу.

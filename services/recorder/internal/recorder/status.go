@@ -4,12 +4,14 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 )
 
@@ -31,9 +33,20 @@ func NewStatusClient(client *http.Client, baseURL string) *StatusClient {
 	return &StatusClient{client: client, baseURL: baseURL}
 }
 
+// Пределы одного запроса к status API: транспорт ограничивает только соединение
+// и заголовки, без общего таймаута зависшее тело ответа остановило бы опрос.
+var statusTimeout = 30 * time.Second // переменная — чтобы тесты могли её сократить
+
+const (
+	statusMaxBody  = 1 << 20 // ответ — небольшой JSON
+	errorBodyLimit = 200     // сколько тела ошибки (часто HTML-страница) попадает в лог
+)
+
 // Fetch возвращает состояние комнаты и HTTP-статус ответа (0 — сетевая ошибка).
 // Не-2xx и некорректный JSON считаются ошибкой.
 func (c *StatusClient) Fetch(ctx context.Context, user string) (Room, int, error) {
+	ctx, cancel := context.WithTimeout(ctx, statusTimeout)
+	defer cancel()
 	endpoint := c.baseURL + "/" + user + "/"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
@@ -47,12 +60,20 @@ func (c *StatusClient) Fetch(ctx context.Context, user string) (Room, int, error
 	defer resp.Body.Close()
 
 	status := resp.StatusCode
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, statusMaxBody))
+	if status < 200 || status >= 300 {
+		// Статус известен и без тела — по нему classifyFailure решает, что делать.
+		if len(body) > errorBodyLimit {
+			body = append(body[:errorBodyLimit:errorBodyLimit], "…"...)
+		}
+		return Room{}, status, &StatusError{
+			Code:       status,
+			RetryAfter: parseRetryAfter(resp.Header.Get("Retry-After"), time.Now()),
+			msg:        fmt.Sprintf("HTTP %d from %s: %s", status, endpoint, body),
+		}
+	}
 	if err != nil {
 		return Room{}, status, fmt.Errorf("read response from %s: %w", endpoint, err)
-	}
-	if status < 200 || status >= 300 {
-		return Room{}, status, fmt.Errorf("HTTP %d from %s: %s", status, endpoint, body)
 	}
 
 	// Разбор через map, чтобы неожиданные типы полей не ломали опрос.
@@ -69,6 +90,38 @@ func (c *StatusClient) Fetch(ctx context.Context, user string) (Room, int, error
 		User:   str("broadcaster_username"),
 		HLSURL: str("hls_source"),
 	}, status, nil
+}
+
+// StatusError — ответ status API не 2xx.
+type StatusError struct {
+	Code       int
+	RetryAfter time.Duration // из заголовка Retry-After; 0 — не задан
+	msg        string
+}
+
+func (e *StatusError) Error() string { return e.msg }
+
+// retryAfter возвращает Retry-After из ошибки Fetch или 0.
+func retryAfter(err error) time.Duration {
+	var se *StatusError
+	if errors.As(err, &se) {
+		return se.RetryAfter
+	}
+	return 0
+}
+
+// parseRetryAfter разбирает Retry-After: число секунд или HTTP-дата. 0 — нет или некорректен.
+func parseRetryAfter(v string, now time.Time) time.Duration {
+	if v == "" {
+		return 0
+	}
+	if sec, err := strconv.Atoi(v); err == nil {
+		return max(time.Duration(sec)*time.Second, 0)
+	}
+	if t, err := http.ParseTime(v); err == nil {
+		return max(t.Sub(now), 0)
+	}
+	return 0
 }
 
 // NewHTTPClient создаёт HTTP-клиент для опроса и скачивания стримов.
