@@ -106,6 +106,8 @@ services/recorder/hlsprobe
 services/recorder/cmd/hlsprobe/hlsprobe
 # Результаты hlsprobe: ответы status API и CDN, сегменты и ключи стримов
 hlsprobe-*/
+# Записи стримов, положенные в корень репо для разбора
+/recordings/
 services/tbot/tbot
 services/tbot/cmd/tbot/tbot
 services/api/api
