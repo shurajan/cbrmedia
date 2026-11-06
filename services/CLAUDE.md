@@ -13,10 +13,10 @@
 
 | Модуль | Пакеты |
 |--------|--------|
-| `core` | `home` (`Layout`, `Prepare()` = resolve+mkdir+chdir, `ConfigFile(svc)`, `AuthFile()`, `DBFile()`), `store` (SQLite), `config` (`Load(path, Validator)`, `ValidateURL`), `svc` (`Logger`, `SignalContext`), `ctxutil.Sleep` |
+| `core` | `home` (`Layout`, `Prepare()` = resolve+mkdir+chdir, `ConfigFile(svc)`, `AuthFile()`, `DBFile()`), `store` (SQLite; `user.go` — `UserFromInput`), `config` (`Load(path, Validator)`, `ValidateURL`), `svc` (`Logger`, `SignalContext`), `ctxutil.Sleep` |
 | `recorder` | `internal/app` (`Run`: ClearStates → RecoverPartial → цикл `Sync` раз в 3 с, prune событий раз в час), `internal/recorder` (`Manager.Sync(ctx, desired)`, `watch`, `record`, `disable` при 4xx; `Sink` = store; `status.go` StatusClient + `NewHTTPClient` с выключенным TLS-verify; `delay.go` интервалы), `internal/hls` (свой HLS-рекордер: `playlist.go`, `crypto.go` AES-128, `writer.go` part-файлы `.download` с правами `0o600` и ротацией раз в час, `RecoverPartial`, `recorder.go` `Record`/`DetectFormat`), `internal/config` |
-| `tbot` | `internal/telegram` (`Bot`: `/add /del /list`, inline-меню удаления, `ForwardEvents` раз в 3 с с курсором `tbot` — в чат только `forwardKinds` (сейчас `user_disabled`; о записях бот не пишет намеренно), `formatEntry`, `chunk`), `internal/app`, `internal/config` |
-| `api` | `internal/httpapi` (fiber v3: `server.go` маршруты, `auth.go` bearer, `videos.go`, `watchlist.go` `/watchlist` + `/events`, `reqlog.go` — лог каждого запроса через slog, подключается только при `-debug`), `internal/auth` (bcrypt + один uuid-токен в auth.json), `internal/library` (метаданные видео из m3u8, fallback ffprobe), `internal/app`, `internal/config`; `cmd/api hash-password` |
+| `tbot` | `internal/telegram` (`Bot`: `/add /del /list` — имя или ссылка через `store.UserFromInput`, ответ с итоговым именем; inline-меню удаления, `ForwardEvents` раз в 3 с с курсором `tbot` — в чат только `forwardKinds` (сейчас `user_disabled`; о записях бот не пишет намеренно), `formatEntry`, `chunk`), `internal/app`, `internal/config` |
+| `api` | `internal/httpapi` (fiber v3: `server.go` маршруты, `auth.go` bearer, `videos.go`, `watchlist.go` `/watchlist` (POST принимает ссылку, отвечает `{message, user}`) + `/events`, `reqlog.go` — лог каждого запроса через slog, подключается только при `-debug`), `internal/auth` (bcrypt + один uuid-токен в auth.json), `internal/library` (метаданные видео из m3u8, fallback ffprobe), `internal/app`, `internal/config`; `cmd/api hash-password` |
 | `converter` | `internal/converter` (`Run` каждые `-interval`, по умолчанию 5 мин, в `dev.sh` 1 мин; `RunOnce`: `cleanupTemp` → `pending` → `remux` в `media/.convert-<имя>` → `validatePlaylist` → rename / `recordings/failed/`), `cmd/converter` (flock `data/converter.lock`). Базу не использует |
 
 ## Общая база (`core/store`, `~/.cbr/data/cbr.db`)
@@ -57,3 +57,5 @@ CBR_HOME=~/cbr-dev make -C tbot run   # одну службу через go run
   Все службы работают от одного пользователя (`User=` в unit), поэтому шире права не нужны.
 - Зависимости: при `go mod tidy` следи, чтобы версии не откатывались (fiber v3.3.0, go-telegram/bot v1.20.0,
   modernc.org/sqlite v1.61.1). `go mod verify` ругается на локальный `cbr/core` (replace) — это нормально.
+- Уязвимость в косвенной зависимости (govulncheck в `make check`) — точечно `go get <модуль>@<fixed>` в нужном модуле,
+  без `go get -u ./...`: иначе сдвинутся закреплённые версии. Так обновлены brotli 1.2.7 и klauspost/compress 1.20.2 в api.
