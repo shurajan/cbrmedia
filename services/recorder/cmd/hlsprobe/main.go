@@ -217,6 +217,7 @@ func (p *probe) get(ctx context.Context, label, rawURL, ext string) (int, []byte
 	n := p.n
 	p.mu.Unlock()
 
+	p.mask.remember(rawURL)
 	rec := record{N: n, Label: label, URL: p.mask.text(rawURL), At: time.Now().UTC().Format(time.RFC3339Nano)}
 	start := time.Now()
 	status, body, headers, err := p.fetch(ctx, rawURL)

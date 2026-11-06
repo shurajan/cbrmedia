@@ -126,6 +126,13 @@ chunk.m4s?session=v1
 		t.Errorf("masked:\n%s\nwant:\n%s", got, want)
 	}
 
+	// Домены вне ссылок: CSP с wildcard, JSON с экранированием; имена файлов не трогаются.
+	csp := `connect-src wss://*.edge1.cdn.com https://edge1.cdn.com; "u002Dfallback.pa.media.com" s5.ts player.js seg_3_1_video.m4s playlist.m3u8 1.600000`
+	wantCSP := `connect-src wss://host3 https://host1; "host4" s5.ts player.js seg_3_1_video.m4s playlist.m3u8 1.600000`
+	if got := m.text(csp); got != wantCSP {
+		t.Errorf("masked:\n%s\nwant:\n%s", got, wantCSP)
+	}
+
 	h := m.headers(map[string][]string{
 		"Set-Cookie": {"sid=secret; Path=/; Domain=edge1.cdn.com"},
 		"Location":   {"https://edge1.cdn.com/next?session=abc"},
@@ -161,5 +168,35 @@ func TestProbeSavedFilesAreMasked(t *testing.T) {
 	}
 	if strings.Contains(stdout.String(), host) {
 		t.Error("printed summary is not masked")
+	}
+}
+
+func TestMaskerHidesDomainsInHTML(t *testing.T) {
+	// Страница 404 приходит HTML: домены в ссылках без схемы, в CSS, в путях и в тексте.
+	m := newMasker("alice")
+	page := `<html><head><link href="https://static.site.com/a.css"><script src="//cdn.site.com/x.js"></script>
+<style>body{background:url(https://img.site.com)}</style><meta content="site.com"></head>
+<body>Page not found. Visit site.com. <a href="/go/www.other.com">x</a> mail@support.site.com
+<a href="https%3A%2F%2Fsite.com%2Fq">y</a> origin.alice.01ABC seg_3_1_video.m4s player.js</body></html>`
+	got := m.text(page)
+	for _, leak := range []string{"site.com", "other.com", "static.", "cdn.", "img."} {
+		if strings.Contains(got, leak) {
+			t.Errorf("%q not masked:\n%s", leak, got)
+		}
+	}
+	for _, keep := range []string{"origin.<user>.01ABC", "seg_3_1_video.m4s", "player.js", "a.css", "x.js", "Visit host"} {
+		if !strings.Contains(got, keep) {
+			t.Errorf("%q must stay:\n%s", keep, got)
+		}
+	}
+}
+
+func TestMaskerSweepsKnownHosts(t *testing.T) {
+	// Хост запроса вычищается даже там, где регулярки его не узнают (склеен с текстом).
+	m := newMasker("")
+	m.remember("https://edge7.cdn.com/x.m3u8")
+	got := m.text(`prefix_EDGE7.CDN.COMsuffix and cdn.com_tracker`)
+	if strings.Contains(strings.ToLower(got), "cdn.com") {
+		t.Errorf("known host not swept: %s", got)
 	}
 }
