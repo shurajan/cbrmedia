@@ -13,7 +13,7 @@
 
 | Модуль | Пакеты |
 |--------|--------|
-| `core` | `home` (`Layout`, `Prepare()` = resolve+mkdir+chdir, `ConfigFile(svc)`, `AuthFile()`, `DBFile()`), `store` (SQLite; `user.go` — `UserFromInput`), `config` (`Load(path, Validator)`, `ValidateURL`), `svc` (`Logger`, `SignalContext`), `ctxutil.Sleep` |
+| `core` | `home` (`Layout`, `Prepare()` = resolve+mkdir+chdir, `ConfigFile(svc)`, `AuthFile()`, `DBFile()`), `store` (SQLite; `user.go` — `UserFromInput`; `check.go` — `WaitFirstCheck`), `config` (`Load(path, Validator)`, `ValidateURL`), `svc` (`Logger`, `SignalContext`), `ctxutil.Sleep` |
 | `recorder` | `internal/app` (`Run`: ClearStates → RecoverPartial → цикл `Sync` раз в 3 с, prune событий раз в час), `internal/recorder` (`Manager.Sync(ctx, desired)`, `watch`, `record`, `classifyFailure` в `delay.go`: 404/410 → неподтверждённого сразу `reject` (`user_rejected`), подтверждённого (`verified`) — `RoomNotFound` и опрос раз в сутки, после `notFoundLimit` = 3 подряд (счётчик в памяти) → `remove`; 401/403/451 → `RoomBlocked` и опрос раз в сутки, 429/5xx/сеть → повтор, прочие 4xx → `disable`; `Sink` = store; `status.go` StatusClient + `NewHTTPClient` с выключенным TLS-verify; `delay.go` интервалы), `internal/hls` (свой HLS-рекордер: `playlist.go`, `crypto.go` AES-128, `writer.go` part-файлы `.download` с правами `0o600` и ротацией раз в час, `RecoverPartial`, `recorder.go` `Record`/`DetectFormat`), `internal/config` |
 | `tbot` | `internal/telegram` (`Bot`: `/add /del /list` — имя или ссылка через `store.UserFromInput`, ответ с итоговым именем; inline-меню удаления, `/add` ждёт `WaitFirstCheck` и отвечает `addReply`, поэтому `WithWorkers(4)`; `ForwardEvents` раз в 3 с с курсором `tbot` — в чат только `forwardKinds` (сейчас `user_disabled`, `user_removed`; о записях бот не пишет намеренно), `formatEntry`, `chunk`), `internal/app`, `internal/config` |
 | `api` | `internal/httpapi` (fiber v3: `server.go` маршруты, `auth.go` bearer, `videos.go`, `watchlist.go` `/watchlist` (POST принимает ссылку, ждёт `WaitFirstCheck`, отвечает `{message, user, check}` или 404 для отклонённого) + `/events`, `reqlog.go` — лог каждого запроса через slog, подключается только при `-debug`), `internal/auth` (bcrypt + один uuid-токен в auth.json), `internal/library` (метаданные видео из m3u8, fallback ffprobe), `internal/app`, `internal/config`; `cmd/api hash-password` |
@@ -30,11 +30,15 @@
   query/fragment отбрасываются). Вызывают tbot (`/add`, `/del`) и api (`POST /watchlist`); в базу пишется только имя.
   Те же правила в iOS — `WatchlistViewModel.userName(from:)`, менять синхронно.
 - События: `recording_started|finished|failed`, `user_disabled`, `user_removed`, `user_rejected` — константы `store.Kind*`.
+- `verified` (миграция 2): status API хоть раз ответил о пользователе успешно (`Verified`/`MarkVerified`, ставит recorder).
+  Только подтверждённых защищает счётчик 3× 404; при миграции все существовавшие строки помечены подтверждёнными.
+- `store.RoomBlocked` (`blocked`, 401/403/451) и `store.RoomNotFound` (`not found`, 404/410) — room_status, который ставит
+  recorder при таких ошибках; tbot показывает их в `/list` как 🚫 и ❓, iOS — `WatchEntryModel.Status.blocked/.notFound`.
 - `WaitFirstCheck` (`store/check.go`): после `AddUser` api и tbot ждут первую проверку recorder'ом (до `FirstCheckTimeout` = 30 с,
-  опрос базы раз в 0,5 с) — признак: запись в watch_state, выключение или удаление. Отклонённого (`CheckRejected`)
+  опрос базы раз в 0,5 с). Признак проверки — строка в watch_state, выключение или удаление пользователя, поэтому recorder
+  обязан писать watch_state (или выключать/удалять) уже при первом ответе status API. Обычно 5–8 с: `DefaultSyncInterval`
+  (3 с) + `initialDelay` (5 с) в recorder — меняешь их, меняется и задержка ответа. Отклонённого (`CheckRejected`)
   recorder удаляет с событием `user_rejected`, tbot его не пересылает — добавивший видит итог в ответе.
-  `store.RoomBlocked` (`blocked`, 401/403/451) и `store.RoomNotFound` (`not found`, 404/410) — room_status,
-  который ставит recorder при таких ошибках; tbot показывает их в `/list` как 🚫 и ❓.
 
 ## Команды
 
@@ -57,6 +61,8 @@ CBR_HOME=~/cbr-dev make -C tbot run   # одну службу через go run
   `preflight`), `dev.sh` (`ALL_SERVICES`, `ready`, `args`), `Makefile` (`MODULES`) и бинарники в корневой `.gitignore`.
 - `log/slog`, остановка через `context`, без глобального состояния; комментарии и документация на русском;
   тесты рядом с кодом, база в тестах — настоящая SQLite во временной папке.
+- Схема базы и протокол «api/tbot ждут recorder» общие для всех служб — на сервере обновлять службы вместе
+  (`install.sh` без аргументов). Новый api/tbot со старым recorder будут отвечать на добавление только через 30 с.
 - Изменил JSON `/videos` или `/watchlist` → обнови `apps/ios/CBRPlayer/Models/` и таблицу в `api/README.md`.
 - Права: служебная папка и подпапки `0o750` (`home.Ensure`, `chmod 750` в `dev.sh`/`install.sh`), секреты и записи `0o600`.
   Все службы работают от одного пользователя (`User=` в unit), поэтому шире права не нужны.
