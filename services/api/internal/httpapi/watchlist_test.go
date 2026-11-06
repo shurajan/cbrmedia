@@ -81,8 +81,12 @@ func TestWatchlistEndpoints(t *testing.T) {
 		t.Fatalf("items = %+v", items)
 	}
 
-	if code, _ := do(t, app, http.MethodDelete, "/watchlist/alice", ""); code != http.StatusOK {
+	// Имя в любом регистре — тот же пользователь, что и при добавлении.
+	if code, _ := do(t, app, http.MethodDelete, "/watchlist/Alice", ""); code != http.StatusOK {
 		t.Fatalf("delete: %d", code)
+	}
+	if code, _ := do(t, app, http.MethodDelete, "/watchlist/bad%20name", ""); code != http.StatusBadRequest {
+		t.Fatalf("delete invalid: %d", code)
 	}
 	if code, _ := do(t, app, http.MethodDelete, "/watchlist/alice", ""); code != http.StatusNotFound {
 		t.Fatalf("second delete: %d", code)

@@ -59,15 +59,17 @@ type recordCall struct {
 }
 
 type fakeRecorder struct {
-	mu    sync.Mutex
-	calls []recordCall
-	done  chan struct{}
-	err   error // что возвращает Record
+	mu     sync.Mutex
+	calls  []recordCall
+	done   chan struct{}
+	err    error         // что возвращает Record
+	active time.Duration // время до последнего сегмента, которое возвращает Record
+	sleep  time.Duration // сколько длится Record
 }
 
 func (f *fakeRecorder) DetectFormat(context.Context, string) hls.Format { return hls.FormatMP4 }
 
-func (f *fakeRecorder) Record(_ context.Context, url, baseName string, format hls.Format) error {
+func (f *fakeRecorder) Record(ctx context.Context, url, baseName string, format hls.Format) (time.Duration, error) {
 	f.mu.Lock()
 	f.calls = append(f.calls, recordCall{url, baseName, format})
 	first := len(f.calls) == 1
@@ -75,7 +77,13 @@ func (f *fakeRecorder) Record(_ context.Context, url, baseName string, format hl
 	if first && f.done != nil {
 		close(f.done)
 	}
-	return f.err
+	if f.sleep > 0 {
+		select {
+		case <-time.After(f.sleep):
+		case <-ctx.Done():
+		}
+	}
+	return f.active, f.err
 }
 
 func (f *fakeRecorder) callCount() int {
@@ -639,6 +647,19 @@ func TestWatchWaitsAfterShortRecording(t *testing.T) {
 
 	if n := recordCallsWithin(t, m, rec, 200*time.Millisecond); n != 1 {
 		t.Errorf("Record called %d times, want 1: short recording waits for the usual delay", n)
+	}
+}
+
+func TestWatchWaitsAfterRecordingEndedByStall(t *testing.T) {
+	// Застывший после эфира плейлист: Record идёт дольше longRecording (ждёт застой),
+	// но последний сегмент записан сразу — это короткая запись, опрос не сразу.
+	rec := &fakeRecorder{sleep: 50 * time.Millisecond, active: time.Millisecond}
+	m, _ := newTestManager(liveStatus(), rec)
+	m.timing.publicDelay = time.Hour
+	m.timing.longRecording = 20 * time.Millisecond
+
+	if n := recordCallsWithin(t, m, rec, 300*time.Millisecond); n != 1 {
+		t.Errorf("Record called %d times, want 1: stall wait must not count as recording time", n)
 	}
 }
 

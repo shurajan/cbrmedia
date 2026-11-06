@@ -23,7 +23,8 @@ type StatusFetcher interface {
 // StreamRecorder определяет формат и записывает стрим.
 type StreamRecorder interface {
 	DetectFormat(ctx context.Context, url string) hls.Format
-	Record(ctx context.Context, url, baseName string, f hls.Format) error
+	// Record возвращает время от начала записи до последнего записанного сегмента.
+	Record(ctx context.Context, url, baseName string, f hls.Format) (time.Duration, error)
 }
 
 // Sink принимает состояние слежения и события (реализация — core/store).

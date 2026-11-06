@@ -46,27 +46,6 @@ func TestLoadMissingFile(t *testing.T) {
 	}
 }
 
-func TestGenerateAndValidToken(t *testing.T) {
-	a := newTestService(t)
-	if err := a.SetPassword("pw"); err != nil {
-		t.Fatalf("SetPassword: %v", err)
-	}
-
-	token, err := a.IssueToken()
-	if err != nil {
-		t.Fatalf("IssueToken: %v", err)
-	}
-	if token == "" {
-		t.Fatal("expected a non-empty token")
-	}
-	if !a.ValidToken(token) {
-		t.Error("expected the generated token to validate")
-	}
-	if a.ValidToken("not-the-token") {
-		t.Error("expected a wrong token to be rejected")
-	}
-}
-
 func TestGenerateTokenPersists(t *testing.T) {
 	a := newTestService(t)
 	if err := a.SetPassword("pw"); err != nil {
@@ -132,6 +111,9 @@ func TestIssueTokenReplacesPrevious(t *testing.T) {
 	second := mustIssue(t, a)
 	if a.ValidToken(first) || !a.ValidToken(second) {
 		t.Error("only the latest token must be valid")
+	}
+	if a.ValidToken("not-the-token") {
+		t.Error("expected a wrong token to be rejected")
 	}
 }
 

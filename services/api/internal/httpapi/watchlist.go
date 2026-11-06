@@ -128,15 +128,21 @@ var checkNames = map[store.CheckOutcome]string{
 	store.CheckDisabled: "disabled",
 }
 
-// removeFromWatchlist — DELETE /watchlist/:user.
+// removeFromWatchlist — DELETE /watchlist/:user. Имя приводится к нижнему
+// регистру, как при добавлении (store.UserFromInput).
 func removeFromWatchlist(db *store.Store) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		user, ok := param(c, "user")
+		raw, ok := param(c, "user")
 		if !ok {
 			return jsonError(c, fiber.StatusBadRequest, "invalid user")
 		}
-		err := db.RemoveUser(c.Context(), user)
+		user, err := store.UserFromInput(raw)
+		if err == nil {
+			err = db.RemoveUser(c.Context(), user)
+		}
 		switch {
+		case errors.Is(err, store.ErrInvalidUser):
+			return jsonError(c, fiber.StatusBadRequest, err.Error())
 		case errors.Is(err, store.ErrUserNotFound):
 			return jsonError(c, fiber.StatusNotFound, err.Error())
 		case err != nil:

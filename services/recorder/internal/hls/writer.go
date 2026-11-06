@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // partialSuffix — суффикс файла, который ещё записывается.
@@ -34,7 +35,8 @@ type segmentWriter struct {
 	tmpPath       string // путь к записываемому .download-файлу
 	finPath       string // путь, в который он переименовывается по завершении part
 	elapsed       float64
-	segments      int // сколько сегментов записано за всю запись
+	segments      int       // сколько сегментов записано за всю запись
+	lastWrite     time.Time // когда записан последний сегмент
 }
 
 // setInit задаёт init-сегмент fMP4. Если содержимое init изменилось, а part
@@ -63,6 +65,7 @@ func (w *segmentWriter) write(data []byte, dur float64) error {
 	}
 	w.elapsed += dur
 	w.segments++
+	w.lastWrite = time.Now()
 	return nil
 }
 

@@ -57,50 +57,30 @@ func TestBearerAuthValidToken(t *testing.T) {
 	}
 }
 
-func TestBearerAuthMissingHeader(t *testing.T) {
-	svc, _ := newAuthWithToken(t)
-	app := newProtectedApp(svc)
-
-	resp := doGet(t, app, "")
-	defer resp.Body.Close()
-	if resp.StatusCode != fiber.StatusUnauthorized {
-		t.Fatalf("status = %d, want %d", resp.StatusCode, fiber.StatusUnauthorized)
-	}
-}
-
-func TestBearerAuthWrongToken(t *testing.T) {
-	svc, _ := newAuthWithToken(t)
-	app := newProtectedApp(svc)
-
-	resp := doGet(t, app, "Bearer wrong-token")
-	defer resp.Body.Close()
-	if resp.StatusCode != fiber.StatusUnauthorized {
-		t.Fatalf("status = %d, want %d", resp.StatusCode, fiber.StatusUnauthorized)
-	}
-}
-
-func TestBearerAuthMalformedHeader(t *testing.T) {
+func TestBearerAuthRejects(t *testing.T) {
 	svc, token := newAuthWithToken(t)
-	app := newProtectedApp(svc)
-
-	// Missing the "Bearer " prefix.
-	resp := doGet(t, app, token)
-	defer resp.Body.Close()
-	if resp.StatusCode != fiber.StatusUnauthorized {
-		t.Fatalf("status = %d, want %d", resp.StatusCode, fiber.StatusUnauthorized)
-	}
-}
-
-func TestBearerAuthEmptyTokenBeforeLogin(t *testing.T) {
-	svc := auth.NewService(filepath.Join(t.TempDir(), "auth.json"))
-	if err := svc.SetPassword("pw"); err != nil {
+	beforeLogin := auth.NewService(filepath.Join(t.TempDir(), "auth.json"))
+	if err := beforeLogin.SetPassword("pw"); err != nil {
 		t.Fatal(err)
 	}
-	app := newProtectedApp(svc)
 
-	resp := doGet(t, app, "Bearer ")
-	defer resp.Body.Close()
-	if resp.StatusCode != fiber.StatusUnauthorized {
-		t.Fatalf("status = %d, want %d", resp.StatusCode, fiber.StatusUnauthorized)
+	tests := []struct {
+		name   string
+		svc    *auth.Service
+		header string
+	}{
+		{"missing header", svc, ""},
+		{"wrong token", svc, "Bearer wrong-token"},
+		{"no Bearer prefix", svc, token},
+		{"empty token before login", beforeLogin, "Bearer "},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := doGet(t, newProtectedApp(tt.svc), tt.header)
+			defer resp.Body.Close()
+			if resp.StatusCode != fiber.StatusUnauthorized {
+				t.Fatalf("status = %d, want %d", resp.StatusCode, fiber.StatusUnauthorized)
+			}
+		})
 	}
 }

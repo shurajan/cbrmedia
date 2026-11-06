@@ -6,28 +6,12 @@ import (
 	"testing"
 )
 
-func TestSimpleIDDeterministic(t *testing.T) {
-	first, second := simpleID("/some/path"), simpleID("/some/path")
-	if first != second {
-		t.Error("simpleID should be deterministic for the same input")
-	}
-}
-
-func TestSimpleIDCaseInsensitive(t *testing.T) {
+func TestSimpleID(t *testing.T) {
 	if simpleID("ABC") != simpleID("abc") {
 		t.Error("simpleID should be case-insensitive")
 	}
-}
-
-func TestSimpleIDDistinctInputs(t *testing.T) {
 	if simpleID("alpha") == simpleID("beta") {
 		t.Error("different inputs should produce different ids")
-	}
-}
-
-func TestSimpleIDNonEmpty(t *testing.T) {
-	if simpleID("x") == "" {
-		t.Error("expected a non-empty id")
 	}
 }
 

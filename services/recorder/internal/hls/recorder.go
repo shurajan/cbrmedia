@@ -133,12 +133,17 @@ const maxSegmentAttempts = 3
 // Record записывает живой стрим masterURL в файлы <baseName>_part<N>.<ext>
 // до конца стрима или отмены ctx. Отмена ctx не считается ошибкой. Если стрим
 // закончился, а записать не удалось ничего, возвращает ErrNoSegments.
-func (r *Recorder) Record(ctx context.Context, masterURL, baseName string, f Format) error {
+//
+// active — время от начала записи до последнего записанного сегмента (0, если
+// сегментов не было): без ожидания застоя в конце. По нему recorder отличает
+// настоящую долгую запись от повторно скачанного застывшего плейлиста.
+func (r *Recorder) Record(ctx context.Context, masterURL, baseName string, f Format) (active time.Duration, err error) {
 	log := r.logger().With("recording", baseName)
+	started := time.Now()
 
 	mediaURL, v, err := resolveMediaPlaylist(ctx, r.Client, masterURL)
 	if err != nil {
-		return fmt.Errorf("resolving media playlist: %w", err)
+		return 0, fmt.Errorf("resolving media playlist: %w", err)
 	}
 	if v.uri != "" {
 		log.Info("selected variant", "bandwidth", v.bandwidth, "uri", v.uri)
@@ -158,13 +163,17 @@ func (r *Recorder) Record(ctx context.Context, masterURL, baseName string, f For
 	defer w.close()
 
 	log.Info("native HLS recorder started", "playlist", mediaURL, "ext", f.Ext)
-	if err := r.download(ctx, log, mediaURL, w); err != nil {
-		return err
+	err = r.download(ctx, log, mediaURL, w)
+	if !w.lastWrite.IsZero() {
+		active = w.lastWrite.Sub(started)
+	}
+	if err != nil {
+		return active, err
 	}
 	if w.segments == 0 && ctx.Err() == nil {
-		return ErrNoSegments
+		return 0, ErrNoSegments
 	}
-	return nil
+	return active, nil
 }
 
 // download перезагружает media-плейлист и пишет новые сегменты в w до конца

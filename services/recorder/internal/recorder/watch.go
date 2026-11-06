@@ -187,8 +187,8 @@ type recordResult int
 
 const (
 	recordSkipped recordResult = iota // свежий URL получить не удалось, запись не начиналась
-	recordDone                        // запись не короче longRecording завершилась (или слежение остановлено)
-	recordShort                       // запись завершилась быстрее longRecording
+	recordDone                        // сегменты шли не меньше longRecording (или слежение остановлено)
+	recordShort                       // последний сегмент записан раньше, чем через longRecording
 	recordFailed                      // запись не удалась (в том числе hls.ErrNoSegments)
 )
 
@@ -216,8 +216,7 @@ func (m *Manager) record(ctx context.Context, user, streamURL string) recordResu
 	m.setState(ctx, user, fresh.Status, true)
 	m.event(ctx, store.KindRecordingStarted, user, fmt.Sprintf("Recording %s started: %s", user, file))
 
-	started := time.Now()
-	err = m.rec.Record(ctx, fresh.HLSURL, baseName, format)
+	active, err := m.rec.Record(ctx, fresh.HLSURL, baseName, format)
 	m.setState(ctx, user, fresh.Status, false)
 	switch {
 	case err != nil:
@@ -231,7 +230,9 @@ func (m *Manager) record(ctx context.Context, user, streamURL string) recordResu
 		log.Info("download finished", "file", file)
 		m.event(ctx, store.KindRecordingFinished, user, fmt.Sprintf("Recording %s finished: %s", user, file))
 	}
-	if ctx.Err() == nil && time.Since(started) < m.timing.longRecording {
+	// Длительность — до последнего сегмента: ожидание застоя в конце не в счёт,
+	// иначе застывший после эфира плейлист записывался бы снова раз в StallTimeout.
+	if ctx.Err() == nil && active < m.timing.longRecording {
 		return recordShort
 	}
 	return recordDone
