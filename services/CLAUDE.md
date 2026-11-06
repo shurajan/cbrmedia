@@ -9,7 +9,7 @@
 
 Общее для всех модулей лежит в `services/`: `Makefile` (цель по всем `MODULES`), `common.mk` (цели модуля,
 подключается из `<модуль>/Makefile` с `SERVICE`/`RUN_ARGS`), `.golangci.yml` (golangci-lint находит его из
-подпапок), `dev.sh` (локальный запуск), `deploy/` (`install.sh` + `logrotate.conf`).
+подпапок), `dev.sh` (локальный запуск), `dev_probe.sh` (hlsprobe с настройками dev), `deploy/` (`install.sh` + `logrotate.conf`).
 
 | Модуль | Пакеты |
 |--------|--------|
@@ -52,6 +52,10 @@ CBR_HOME=~/cbr-dev make -C tbot run   # одну службу через go run
 `dev.sh` (bash 3.2 из macOS: без ассоциативных массивов и `wait -n`) и `deploy/install.sh` проверяют одно и то же
 перед запуском: конфиг `<служба>.json` (нет — кладут шаблон и пропускают службу), `auth.json` у api, ffmpeg у converter.
 Меняешь набор служб или их аргументы — правь оба скрипта.
+
+`dev_probe.sh` принимает только пользователя, параметры hlsprobe заданы в нём (`-nonexistent neverexistinguserbla`,
+`-wait 5m`, `-duration 5m`, `-segments 4`); собирает `$CBR_HOME/bin/hlsprobe` и запускает из корня репо. Нужен новый
+замер — добавь флаг в `cmd/hlsprobe` и значение в скрипт, а не аргументы пользователю.
 
 ## Соглашения
 

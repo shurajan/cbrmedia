@@ -47,7 +47,7 @@ func TestProbeSavesResponses(t *testing.T) {
 	for _, want := range []string{
 		"status_raw_case", "Alice", "HTTP 404", // регистр и несуществующий пользователь
 		"BANDWIDTH=99 RESOLUTION=1280x720",
-		"reload 0: seq=5", "endlist=true",
+		"reload 0 +0s: seq=5", "endlist=true",
 		"segment1", "hls_source changed: false", "neverexistinguserbla",
 	} {
 		if !strings.Contains(summary, want) {
@@ -79,5 +79,30 @@ func TestProbeUsage(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	if code := run(nil, &stdout, &stderr); code != 2 {
 		t.Errorf("exit %d, want 2", code)
+	}
+}
+
+func TestProbeReloadsForDuration(t *testing.T) {
+	// Плейлист без ENDLIST: перезагрузки идут, пока не пройдёт -duration (target 1 с).
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/live/":
+			fmt.Fprintf(w, `{"room_status":"public","hls_source":"%s/media.m3u8"}`, srv.URL)
+		case "/media.m3u8":
+			fmt.Fprint(w, "#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1,\ns1.ts\n")
+		default:
+			fmt.Fprint(w, "SEG")
+		}
+	}))
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"-base-url", srv.URL + "/api", "-out", t.TempDir(), "-reloads", "1", "-duration", "1500ms", "live"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, stderr.String())
+	}
+	if n := strings.Count(stdout.String(), "\nreload "); n < 2 {
+		t.Errorf("%d reloads, want them to continue for -duration:\n%s", n, stdout.String())
 	}
 }

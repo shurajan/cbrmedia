@@ -9,8 +9,8 @@
 #   - статус пользователя в нижнем, исходном и верхнем регистре и несуществующего
 #     neverexistinguserbla — реальные коды ответов и чувствительность к регистру;
 #   - ждёт начала стрима до 5 мин, если он не идёт;
-#   - 15 перезагрузок media-плейлиста (около минуты) — меняются ли токены в URL
-#     сегментов, как растёт MEDIA-SEQUENCE;
+#   - 5 минут перезагрузок media-плейлиста (раз в target duration) — меняются ли
+#     токены в URL сегментов, как растёт MEDIA-SEQUENCE, не истекает ли токен;
 #   - 4 последних сегмента, ключи, init, свежий hls_source.
 #
 # Собирает hlsprobe в $CBR_HOME/bin и кладёт результат в корень репозитория:
@@ -26,7 +26,7 @@ REPO_DIR="$(cd "$SERVICES_DIR/.." && pwd)"
 export CBR_HOME="${CBR_HOME:-$HOME/cbr-dev}"
 NONEXISTENT_USER="neverexistinguserbla"
 WAIT="5m"
-RELOADS=15
+DURATION="5m"
 SEGMENTS=4
 
 die() { echo "❌ $*" >&2; exit 1; }
@@ -43,5 +43,5 @@ echo "🔨 сборка hlsprobe…"
 cd "$REPO_DIR" || die "нет $REPO_DIR"
 echo "🔎 CBR_HOME=$CBR_HOME"
 "$CBR_HOME/bin/hlsprobe" -nonexistent "$NONEXISTENT_USER" -wait "$WAIT" \
-  -reloads "$RELOADS" -segments "$SEGMENTS" "$1" || die "hlsprobe завершился с ошибкой"
+  -duration "$DURATION" -segments "$SEGMENTS" "$1" || die "hlsprobe завершился с ошибкой"
 echo "✅ готово: пришлите имя папки hlsprobe-… из $REPO_DIR"

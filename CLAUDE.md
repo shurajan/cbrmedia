@@ -36,6 +36,8 @@ CBRPlayer ──HTTP :8000 (Bearer)──▶ api ──▶ ~/.cbr/media
 ## Запуск
 
 - Весь back-end локально (macOS): `services/dev.sh [служба…]` — данные в `~/cbr-dev` (`CBR_HOME`), Ctrl+C останавливает всё.
+- Диагностика внешних сервисов: `services/dev_probe.sh <user|ссылка>` (пользователь в эфире) — сырые ответы status API
+  и CDN в `hlsprobe-<user>-<время>/` в корне репо; по ним подстраивается recorder (`services/recorder/README.md`).
 - Тесты и проверки: `make -C services test` / `make -C services check` (vet, golangci-lint, тесты, govulncheck).
 - Сервер (Ubuntu): `services/deploy/install.sh [служба…]` — systemd-units `cbr-<служба>.service`.
 - iOS: `open apps/ios/CBRPlayer.xcodeproj`, симулятор iPad с iOS ≥ 26.6; хост в приложении `localhost:8000`.
@@ -43,7 +45,8 @@ CBRPlayer ──HTTP :8000 (Bearer)──▶ api ──▶ ~/.cbr/media
 ## Общее
 
 - Единый `.gitignore` в корне (секции: общие / iOS / Go). Игнорирует конфиги служб с токенами, служебную папку
-  внутри репо (`.cbr/`, `cbr-dev/`), файлы SQLite и бинарники от `go build` — их перечисляет по именам служб.
+  внутри репо (`.cbr/`, `cbr-dev/`), файлы SQLite, бинарники от `go build` (перечисляет по именам служб и `hlsprobe`)
+  и результаты `hlsprobe-*/` (в них CDN-токены).
 - Секреты (`<служба>.json`, `auth.json`) живут вне репо в `$CBR_HOME/config/`.
 - Службы независимы: включаются/выключаются отдельно (`cbr-<служба>.service`), общаются только через
   общую базу `~/.cbr/data/cbr.db` и файлы.

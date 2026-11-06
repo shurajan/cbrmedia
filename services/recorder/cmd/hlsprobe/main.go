@@ -6,7 +6,7 @@
 //
 // Использование:
 //
-//	hlsprobe [-out DIR] [-wait 10m] [-reloads 6] [-segments 3] [-nonexistent NAME] <user или ссылка>
+//	hlsprobe [-out DIR] [-wait 10m] [-reloads 6 | -duration 5m] [-segments 3] [-nonexistent NAME] <user или ссылка>
 //
 // base_url и proxy берутся из $CBR_HOME/config/recorder.json (как у recorder),
 // флаги -base-url и -proxy их переопределяют. Всё сохраняется в DIR:
@@ -45,7 +45,7 @@ func main() {
 type options struct {
 	out, baseURL, proxy string
 	nonexistent         string // имя, которого точно нет в status API
-	wait                time.Duration
+	wait, duration      time.Duration
 	reloads, segments   int
 }
 
@@ -63,6 +63,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&o.nonexistent, "nonexistent", "", "user that surely does not exist (default <user>zz0probe404)")
 	fs.DurationVar(&o.wait, "wait", 0, "if the stream is not live, poll every 15s up to this long")
 	fs.IntVar(&o.reloads, "reloads", 6, "how many times to reload the media playlist")
+	fs.DurationVar(&o.duration, "duration", 0, "reload the media playlist for this long instead of -reloads times")
 	fs.IntVar(&o.segments, "segments", 3, "how many latest segments to download")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -305,7 +306,7 @@ func (p *probe) run(ctx context.Context, o options, user, raw string) {
 	if mediaURL == "" {
 		return
 	}
-	last := p.reloads(ctx, mediaURL, o.reloads)
+	last := p.reloads(ctx, mediaURL, o.reloads, o.duration)
 	if last != nil {
 		p.download(ctx, last, o.segments)
 	}
@@ -438,28 +439,39 @@ func parseMedia(base, text string) playlist {
 	return pl
 }
 
-// reloads перезагружает media-плейлист count раз с интервалом target duration и
+// reloads перезагружает media-плейлист count раз (или, если duration > 0, в течение
+// duration — видно, живут ли токены дольше) с интервалом target duration и
 // сравнивает URL сегментов соседних перезагрузок — целиком и без query
 // (так видно, меняются ли токены у тех же сегментов). Возвращает последний плейлист.
-func (p *probe) reloads(ctx context.Context, mediaURL string, count int) *playlist {
+func (p *probe) reloads(ctx context.Context, mediaURL string, count int, duration time.Duration) *playlist {
 	p.logf("\n== media playlist reloads")
+	if duration > 0 {
+		fmt.Fprintf(os.Stderr, "reloading the media playlist for %v…\n", duration)
+	}
+	start := time.Now()
+	finished := func(i int) bool {
+		if duration > 0 {
+			return time.Since(start) >= duration
+		}
+		return i >= count-1
+	}
 	var prev, last *playlist
-	for i := range count {
+	for i := 0; ; i++ {
 		code, body, err := p.get(ctx, fmt.Sprintf("media_reload%d", i), mediaURL, ".m3u8")
 		if err != nil || code != http.StatusOK {
-			p.logf("reload %d: HTTP %d err=%v", i, code, err)
+			p.logf("reload %d +%ds: HTTP %d err=%v", i, int(time.Since(start).Seconds()), code, err)
 			return last
 		}
 		pl := parseMedia(mediaURL, string(body))
-		line := fmt.Sprintf("reload %d: seq=%d target=%ds segments=%d disc=%d endlist=%v keys=%d maps=%d",
-			i, pl.seq, pl.target, len(pl.segments), pl.discontinuities, pl.endList, len(pl.keys), len(pl.maps))
+		line := fmt.Sprintf("reload %d +%ds: seq=%d target=%ds segments=%d disc=%d endlist=%v keys=%d maps=%d",
+			i, int(time.Since(start).Seconds()), pl.seq, pl.target, len(pl.segments), pl.discontinuities, pl.endList, len(pl.keys), len(pl.maps))
 		if prev != nil {
 			line += fmt.Sprintf(" | vs prev: same URL %d, same path %d, seq +%d",
 				overlap(prev.segments, pl.segments, false), overlap(prev.segments, pl.segments, true), pl.seq-prev.seq)
 		}
 		p.logf("%s", line)
 		prev, last = &pl, &pl
-		if pl.endList || i == count-1 {
+		if pl.endList || finished(i) {
 			break
 		}
 		delay := time.Duration(max(pl.target, 1)) * time.Second
