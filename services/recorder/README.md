@@ -47,6 +47,22 @@ This software is provided for recording streams that you own or that you are exp
   События старше 30 дней удаляются.
 - **Проверка TLS-сертификатов отключена** для опроса и скачивания (при старте пишется предупреждение).
 
+## Диагностика: `hlsprobe`
+
+Утилита для разбора реального поведения status API и CDN (ничего не пишет в базу и в recordings):
+
+```bash
+go build -o bin/hlsprobe ./cmd/hlsprobe                                   # или GOOS=linux GOARCH=amd64 для сервера
+bin/hlsprobe [-wait 30m] [-reloads 6] [-segments 3] [-out DIR] <user или ссылка>
+```
+
+`base_url` и `proxy` берёт из `recorder.json` (флаги `-base-url`, `-proxy` переопределяют). Запрашивает статус
+пользователя (как есть, в исходном регистре, в верхнем и заведомо несуществующего — чтобы увидеть коды ответов),
+master- и все media-плейлисты, `-reloads` раз перезагружает лучший вариант (видно, меняются ли токены в URL
+сегментов и как растёт `MEDIA-SEQUENCE`), скачивает ключи, init и последние `-segments` сегментов, затем свежий
+`hls_source`. Результат — папка `hlsprobe-<user>-<время>/`: тела ответов, `requests.jsonl` (URL, код, заголовки,
+время) и `summary.txt`. В файлах есть CDN-токены, папка в `.gitignore`.
+
 ## Конфиг `~/.cbr/config/recorder.json`
 
 ```json

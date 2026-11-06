@@ -102,6 +102,10 @@ services/**/*.lock
 # Новую службу добавить сюда же.
 services/recorder/recorder
 services/recorder/cmd/recorder/recorder
+services/recorder/hlsprobe
+services/recorder/cmd/hlsprobe/hlsprobe
+# Результаты hlsprobe: ответы status API и CDN с токенами
+hlsprobe-*/
 services/tbot/tbot
 services/tbot/cmd/tbot/tbot
 services/api/api
