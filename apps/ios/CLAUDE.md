@@ -1,7 +1,7 @@
 # CBRPlayer (iOS / iPadOS)
 
-SwiftUI-клиент службы `services/api`: логин по паролю, вкладки «Videos» (медиатека, HLS-плеер с сохранением позиции)
-и «Watchlist» (кого recorder отслеживает и записывает).
+SwiftUI-клиент службы `services/api`: логин по паролю, главная с плитками разделов, экраны «Videos» (медиатека,
+HLS-плеер с сохранением позиции) и «Watchlist» (кого recorder отслеживает и записывает).
 
 - Xcode-проект `CBRPlayer.xcodeproj`, схема **CBRPlayer**, только iPad (`TARGETED_DEVICE_FAMILY = 2`), iOS 26.6, Swift 6, bundle `com.bralnin.cbrplayer`.
 - Без внешних SPM-зависимостей. Info.plist генерируется (`GENERATE_INFOPLIST_FILE`, ключи `INFOPLIST_KEY_*` в pbxproj):
@@ -19,11 +19,11 @@ SwiftUI-клиент службы `services/api`: логин по паролю, 
 | Путь | Что |
 |------|-----|
 | `FSPlayerApp.swift` | `@main`, настройка UINavigationBar |
-| `Scenes/FSPlayerView.swift` | корень: `NavigationStack` по `NavigationDestination {login, main}`, держит `SessionStorage`, `GlobalSettings` |
-| `Scenes/Main/MainTabView.swift` | после входа: `TabView` «Videos» / «Watchlist» с нижней панелью иконок без подписей (названия — в `accessibilityLabel`; на iPad — через `.horizontalSizeClass = .compact` у `TabView`, содержимому вкладок возвращается исходный размер; без этого вкладки сверху); общие кнопки назад, обновить (открытую вкладку — через `refreshSignal`), настройки. Кнопки `.toolbar` внутри вкладки через `TabView` не доходят — добавлять сюда |
+| `Scenes/FSPlayerView.swift` | корень: `NavigationStack` по `NavigationDestination {login, main, videos, watchlist}`, держит `SessionStorage`, `GlobalSettings` |
+| `Scenes/Main/` | после входа — главная `MainView` (крупный заголовок «Home», строка «Connected to host», сетка 3 плиток в ряд, `maxWidth` 960; без `ScrollView` — в нём крупный заголовок в iOS 26 не рисуется): плитка `HomeTileView` — `NavigationLink(value:)` на дочерний экран; набор плиток фиксированный, новая появляется вместе с новой функцией. Кнопки: назад к входу (слева), настройки (справа). `HomeViewModel` при каждом показе (`onAppear`, в т.ч. после возврата с дочернего экрана) параллельно грузит `/videos` и `/watchlist` для сводки на плитках («48 videos · 112 GB», «5 users · ● 1 recording» цветом `recording`); ошибки не показывает — сводка остаётся прежней или пустой |
 | `Scenes/LoginView/` | `LoginView`, `LoginViewModel` (host + пароль → `AuthService.login`), `HostAndPortInputView` |
-| `Scenes/VideoList/` | `VideoListView` (поле фильтра над таблицей; при пустом результате — «Nothing found» на фоне; обновление по `refreshSignal`), `VideoListViewModel` (загрузка, `filterText` → `filteredFiles`: по имени A–Z, подстрока без учёта регистра; удаление с подтверждением), `VideoItemView` |
-| `Scenes/Watchlist/` | `WatchlistView` (поле «User name or link» + Add; если итоговое имя отличается от ввода (ссылка, заглавные буквы), подсказка «Will add: <имя>», на сервер уходит только имя в нижнем регистре — `WatchlistViewModel.userName(from:)`; сервер отвечает после проверки recorder'ом (5–8 с) — под полем «Checking <имя>…», поле не очищается, если в нём успели ввести другое; ошибка (в т.ч. «not found, not added») под полем, после любого действия список перечитывается, свайп Remove с подтверждением, автообновление статусов раз в 10 с), `WatchlistViewModel`, `WatchEntryView` (статус: 🔴 запись / 👁 слежение / 🚫 доступ запрещён / ❓ не найден / ⏳ ждёт recorder / ⏸ выключен + кнопка Enable) |
+| `Scenes/VideoList/` | `VideoListView` (дочерний экран: заголовок «Videos», системная «назад» → `Home`, своя кнопка «обновить» в `.toolbar`; поле фильтра над таблицей; при пустом результате — «Nothing found» на фоне), `VideoListViewModel` (загрузка, `filterText` → `filteredFiles`: по имени A–Z, подстрока без учёта регистра; удаление с подтверждением), `VideoItemView` |
+| `Scenes/Watchlist/` | `WatchlistView` (дочерний экран с теми же заголовком/«назад»/«обновить»; поле «User name or link» + Add; если итоговое имя отличается от ввода (ссылка, заглавные буквы), подсказка «Will add: <имя>», на сервер уходит только имя в нижнем регистре — `WatchlistViewModel.userName(from:)`; сервер отвечает после проверки recorder'ом (5–8 с) — под полем «Checking <имя>…», поле не очищается, если в нём успели ввести другое; ошибка (в т.ч. «not found, not added») под полем, после любого действия список перечитывается, свайп Remove с подтверждением, автообновление статусов раз в 10 с), `WatchlistViewModel`, `WatchEntryView` (статус: 🔴 запись / 👁 слежение / 🚫 доступ запрещён / ❓ не найден / ⏳ ждёт recorder / ⏸ выключен + кнопка Enable) |
 | `Scenes/VideoView/` | `VideoPlayerView`, `VideoPlayerViewModel` — `AVURLAsset` с заголовком `Authorization` через `AVURLAssetHTTPHeaderFieldsKey`, URL `http://host + hlsURL`, позиция сохраняется на паузе, сбрасывается в конце |
 | `Scenes/Settings/` | `SettingsView`, `GlobalSettings` (оверлей производительности), `PerfomanceMonitor/` |
 | `Controls/FSVideoPlayer/` | свой плеер: `FSPlayerController` (play/pause/seek/scrub, очередь seek), `FSVideoPlayerLayerView`, `FSVideoPlayerView`, `FSVideoScrubber` |
@@ -38,27 +38,29 @@ SwiftUI-клиент службы `services/api`: логин по паролю, 
 Приложение всегда в тёмной теме (`INFOPLIST_KEY_UIUserInterfaceStyle = Dark`), системная светлая тема не учитывается.
 В экранах — только роли `Theme`; `Palette` — сырьё для ролей. Без `.red`/`.green`/системных фонов.
 
-**Палитра** (`Palette` в `Helpers/Theme.swift`): пять исходных цветов, у каждого тональная шкала 50…950, построенная в OKLCH
+**Палитра** (`Palette` в `Helpers/Theme.swift`): семь исходных цветов, у каждого тональная шкала 50…950, построенная в OKLCH
 (тон сохраняется, светлота равномерна для глаза). Исходный цвет стоит в шкале без изменений:
-`ocean700` = `#0c6a93`, `sky500` = `#2f85ac`, `deep900` = `#113844`, `orange400` = `#f47321`, `yellow200` = `#f0bd22`.
+`ocean700` = `#0c6a93`, `sky500` = `#2f85ac`, `deep900` = `#113844`, `orange400` = `#f47321`, `yellow200` = `#f0bd22`,
+`green400` = `#34c26b` (воспроизведение), `red400` = `#ff6b6b` (удаление, запись) — привычные людям цвета для play и delete.
 
 **Роли** (`Theme`), контраст по WCAG — текст ≥ 4.5, иконки ≥ 3:
 
 | Роль | Цвет | Где |
 |---|---|---|
-| `background` | deep950 | фон экранов, панель навигации, подложка кнопки play |
-| `surface` / `surfaceElevated` | deep900 / deep800 | карточки и строки, поля (в т.ч. фильтр), форма настроек / выделение |
+| `background` | deep950 | фон экранов, панель навигации, подложка кнопки play и иконки плитки |
+| `surface` / `surfaceElevated` | deep900 / deep800 | карточки, строки, плитки главной, поля (в т.ч. фильтр), форма настроек / выделение |
 | `separator` / `border` | deep700 / sky700 | разделители строк / рамка полей |
-| `textPrimary` / `textSecondary` / `textTertiary` | deep50 / deep300 / deep500 | основной текст / метаданные, иконки полей, «Checking…», статус «Not found» / неактивное, «Nothing found», «No users yet», статус «Waiting for recorder» |
-| `accent` | sky400 (также `AccentColor`) | текст и иконки интерактивных элементов, выбранная вкладка, статус «Watching» (4.8 на surface) |
+| `textPrimary` / `textSecondary` / `textTertiary` | deep50 / deep300 / deep500 | основной текст / метаданные, иконки полей, «Checking…», статус «Not found» / неактивное, «Nothing found», «No users yet», статус «Waiting for recorder», сводка и шеврон плитки, «Connected to …» |
+| `accent` | sky400 (также `AccentColor`) | текст и иконки интерактивных элементов, иконка плитки, статус «Watching» (4.8 на surface) |
 | `accentFill` / `accentPressed` | sky500 / sky300 | дорожка переключателя / нажатое состояние |
 | `primary` / `primaryPressed` / `onPrimary` | ocean700 / ocean800 / белый | заливка кнопок Login, Back to Login, Add, Enable |
-| `playback` | orange400 | иконка play, прогресс и бегунок плеера, статус «Recording» |
-| `destructive` / `destructiveFill` | orange400 / orange600 | удаление: текст / заливка свайпа под белым (5.4) |
+| `play` | green400 | иконка play в списке видео (7.4 на фоне, 5.5 на surface) |
+| `playback` | orange400 | прогресс и бегунок плеера |
+| `destructive` / `destructiveFill` | red400 / red600 | удаление: текст и иконки (4.6 на surface) / заливка свайпа под белым (5.2) |
+| `recording` | red400 | статус «Recording» в Watchlist, точка и «N recording» на плитке главной |
 | `warning` / `onWarning` | yellow200 / deep950 | тексты ошибок, значок ошибки в плеере, оверлей производительности, статусы «Disabled» и «Access denied» |
 | `info` | sky400 | информационные сообщения |
 
-Зелёного в палитре нет, поэтому роли `success` нет — при необходимости согласовать цвет.
 Глобальные цвета UIKit (панель навигации) — в `FSPlayerApp.init`. Плеер чёрный под видео с белыми элементами.
 Поля ввода — модификатор `themedField()` (системный `.roundedBorder` в тёмной теме заливает чёрным).
 
@@ -72,7 +74,7 @@ SwiftUI-клиент службы `services/api`: логин по паролю, 
 - Состояния пользователей без запущенного recorder: добавить через `POST /watchlist`, затем прямо в базе
   `sqlite3 $CBR_HOME/data/cbr.db` — `UPDATE watchlist SET enabled=0, disabled_reason=…`, `INSERT INTO watch_state(user, room_status, recording, updated_at)` (время в unix ms).
 - Приложение помнит `host:port` с прошлого входа — в тесте поля очищать перед вводом.
-- Нажатие на вкладку, пока исчезает диалог пароля, теряется — повторять, пока не появится контент вкладки.
+- Нажатие на плитку, пока исчезает диалог пароля, теряется — повторять, пока не появится дочерний экран.
 - Кнопка удаления в системном алерте красноватая — это цвет iOS, палитрой не задаётся.
 
 ## Соглашения

@@ -10,7 +10,8 @@
 |-------|-----|--------|
 | `services/` | Go 1.26, независимые службы `recorder`, `tbot`, `api`, `converter` + библиотека `core` (общая база SQLite) | `services/CLAUDE.md` |
 | `apps/ios/` | CBRPlayer (на экране — «cbr») — SwiftUI-клиент для iPad, iOS 26.6, тёмная тема на палитре `Theme` | `apps/ios/CLAUDE.md` |
-| `apps/android`, `apps/web` | планируются, пока нет | — |
+| `apps/android`, `apps/web` | планируются, пока нет — делать по макету из `design/` | — |
+| `design/` | эталон дизайна: `tokens.json` (палитра и роли, генерируется из `Theme.swift` скриптом `gen_tokens.py`), артборды экранов `canvas/*.dc.html` | `design/README.md` |
 
 ## Поток данных
 
@@ -28,7 +29,7 @@ CBRPlayer ──HTTP :8000 (Bearer)──▶ api ──▶ ~/.cbr/media
 - `GET /videos` → `[{id, name, hlsURL, createdAt?, duration, resolution?, sizeMB?, segmentCount, avgSegmentDuration}]`
   — Go: `services/api/internal/httpapi/videos.go` `MediaFile`; Swift: `Models/VideoItemModel.swift`
 - `GET /videos/:name/*` — файлы HLS; `DELETE /videos/:name`
-- `GET/POST /watchlist`, `DELETE /watchlist/:user` — вкладка «Watchlist» в iOS
+- `GET/POST /watchlist`, `DELETE /watchlist/:user` — экран «Watchlist» в iOS (открывается плиткой с главной)
   (Go `WatchEntry` в `watchlist.go` ↔ Swift `Models/WatchEntryModel.swift`). `POST` и `/add` в tbot принимают имя
   или ссылку на страницу, сохраняется только имя в нижнем регистре (`DELETE` и `/del` тоже приводят имя к нижнему) (Go `store.UserFromInput` ↔ Swift `WatchlistViewModel.userName(from:)`).
   Ответ на добавление — после первой проверки recorder'ом (5–8 с): 404, если пользователя нет.

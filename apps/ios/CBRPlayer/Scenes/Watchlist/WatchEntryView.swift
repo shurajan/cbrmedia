@@ -69,7 +69,7 @@ struct WatchEntryView: View {
 
     private var statusColor: Color {
         switch entry.status {
-        case .recording: Theme.playback
+        case .recording: Theme.recording
         case .watching: Theme.accent
         case .blocked: Theme.warning
         case .notFound: Theme.textSecondary

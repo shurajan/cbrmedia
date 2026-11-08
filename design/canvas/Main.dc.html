@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>cbr — main page with tiles</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,"SF Pro Text","Helvetica Neue",Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:#61A8CC;text-decoration:none}a:hover{color:#81C1E3}
+</style>
+</helmet>
+<div style="width: 1194px; height: 834px; box-sizing: border-box; background: #021E27; color: #E7F9FF; display: flex; flex-direction: column; overflow: hidden">
+
+  <!-- Navigation bar -->
+  <div style="height: 50px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; background: #021E27">
+    <a href="Login.dc.html" aria-label="Log out" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: #61A8CC">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+    </a>
+    <div style="font-size: 17px; font-weight: 600; color: #E7F9FF">cbr</div>
+    <button type="button" aria-label="Settings" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: #61A8CC; background: none; border: 0; padding: 0; cursor: pointer">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+  </div>
+
+  <!-- Content -->
+  <div style="flex: 1; display: flex; flex-direction: column; align-items: center; padding: 56px 48px 48px; box-sizing: border-box">
+    <div style="width: 100%; max-width: 960px; display: flex; flex-direction: column; gap: 32px">
+
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <h1 style="margin: 0; font-size: 34px; font-weight: 700; letter-spacing: -0.3px; color: #E7F9FF">Home</h1>
+        <div style="font-size: 15px; color: #6F8C96">Connected to 192.168.1.10:8000</div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px">
+
+        <!-- Tile: Videos -->
+        <a href="Videos.dc.html" style="display: flex; flex-direction: column; justify-content: space-between; height: 232px; box-sizing: border-box; padding: 24px; background: #113844; border-radius: 20px; color: #E7F9FF">
+          <div style="display: flex; align-items: flex-start; justify-content: space-between">
+            <div style="width: 60px; height: 60px; border-radius: 30px; background: #021E27; display: flex; align-items: center; justify-content: center; color: #61A8CC">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M10 9l5 3-5 3z" fill="currentColor"/></svg>
+            </div>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6F8C96" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <div style="font-size: 22px; font-weight: 600; color: #E7F9FF">Videos</div>
+            <div style="font-size: 15px; color: #A3BCC5">Recorded streams, ready to play</div>
+            <div style="font-size: 13px; color: #6F8C96; margin-top: 6px">48 videos · 112 GB</div>
+          </div>
+        </a>
+
+        <!-- Tile: Watchlist -->
+        <a href="Watchlist.dc.html" style="display: flex; flex-direction: column; justify-content: space-between; height: 232px; box-sizing: border-box; padding: 24px; background: #113844; border-radius: 20px; color: #E7F9FF">
+          <div style="display: flex; align-items: flex-start; justify-content: space-between">
+            <div style="width: 60px; height: 60px; border-radius: 30px; background: #021E27; display: flex; align-items: center; justify-content: center; color: #61A8CC">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 12s4-7 10.5-7 10.5 7 10.5 7-4 7-10.5 7S1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3"/></svg>
+            </div>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6F8C96" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <div style="font-size: 22px; font-weight: 600; color: #E7F9FF">Watchlist</div>
+            <div style="font-size: 15px; color: #A3BCC5">Who the recorder follows</div>
+            <div style="font-size: 13px; color: #6F8C96; margin-top: 6px; display: flex; align-items: center; gap: 6px"><span>5 users ·</span><span style="width: 8px; height: 8px; border-radius: 4px; background: #FF6B6B; display: inline-block"></span><span style="color: #FF6B6B">1 recording</span></div>
+          </div>
+        </a>
+
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1194,"height":834}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

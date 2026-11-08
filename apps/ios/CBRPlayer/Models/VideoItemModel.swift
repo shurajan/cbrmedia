@@ -46,7 +46,12 @@ struct VideoItemModel: Identifiable, Equatable, Codable {
     }
 
     func formatSize() -> String {
-        let size = Double(sizeMB ?? 0)
+        Self.formatSize(mb: sizeMB ?? 0)
+    }
+
+    /// Размер в мегабайтах — строкой: «<1 MB», «512 MB», «2.4 GB», «112 GB».
+    static func formatSize(mb: Int) -> String {
+        let size = Double(mb)
 
         switch size {
         case 0..<1:

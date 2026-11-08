@@ -1,0 +1,21 @@
+{
+  "v": 3,
+  "createdOnFiles": {"v": 1, "at": "2026-11-08T12:00:00Z"},
+  "title": "cbr — главная с плитками",
+  "launch": {"view": "canvas"},
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {"x": 1274, "y": 0, "w": 1194, "h": 834, "title": "2. Главная (плитки)", "is_interactive": true, "radius": 24},
+    "Login.dc.html": {"x": 0, "y": 0, "w": 1194, "h": 834, "title": "1. Login (как сейчас)", "is_interactive": true, "radius": 24},
+    "Videos.dc.html": {"x": 2548, "y": 0, "w": 1194, "h": 834, "title": "3a. Videos — назад на главную", "is_interactive": true, "radius": 24},
+    "Watchlist.dc.html": {"x": 2548, "y": 954, "w": 1194, "h": 834, "title": "3b. Watchlist — назад на главную", "is_interactive": true, "radius": 24},
+    "Palette.dc.html": {"x": 1274, "y": 954, "w": 1194, "h": 560, "title": "Палитра: зелёный и красный", "radius": 24}
+  },
+  "order": ["Main.dc.html", "Login.dc.html", "Videos.dc.html", "Watchlist.dc.html", "Palette.dc.html"],
+  "notes": {
+    "title": {"x": 0, "y": -300, "text": "cbr · Login → главная с плитками → дочерние экраны", "kind": "title1", "maxW": 3742},
+    "nav": {"x": 0, "y": 954, "w": 560, "text": "Навигация\n\n• Login → главная: после входа, как сейчас.\n• Главная: плитки вместо вкладок. Нажатие на плитку открывает дочерний экран (push в NavigationStack).\n• Дочерний экран: стрелка «назад» слева возвращает на главную. Справа — только действия этого экрана (обновить, …).\n• Шестерёнка (настройки) и выход — на главной.\n• Набор плиток фиксированный: новая появляется вместе с новой функцией, в коде.\n\nВ прототипе плитки и стрелки кликабельны (Play).", "size": "m", "fill": "blue"},
+    "tiles": {"x": 640, "y": 954, "w": 560, "text": "Плитка и цвета\n\nПоверхность surface (deep900), радиус 20, иконка в круге фона, название, описание, сводка (счётчики — по желанию). Сетка 3 в ряд на iPad.\n\nPlay — зелёный (play = green400), удаление — красный (destructive = red400, свайп — red600). Статус «Recording» (иконка, текст, точка на плитке) — тоже red400. Orange (playback) остаётся только прогрессу плеера. В строках Videos и Watchlist одна строка показана с открытым свайпом.", "size": "m", "fill": "teal"}
+  },
+  "designSystems": []
+}

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>cbr — palette additions: green and red</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,"SF Pro Text","Helvetica Neue",Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:#61A8CC}a:hover{color:#81C1E3}
+</style>
+</helmet>
+<div style="width: 1194px; height: 560px; box-sizing: border-box; background: #021E27; color: #E7F9FF; padding: 40px 48px; display: flex; flex-direction: column; gap: 28px">
+
+  <div style="display: flex; flex-direction: column; gap: 6px">
+    <h1 style="margin: 0; font-size: 28px; font-weight: 700; color: #E7F9FF">Palette additions</h1>
+    <div style="font-size: 15px; color: #A3BCC5">Two new scales built like the others (OKLCH, even lightness). Roles: play → green400, destructive → red400, destructiveFill → red600. Orange (playback) stays for the player progress only; the Recording status uses red400 too.</div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px">
+
+    <!-- Green -->
+    <div style="display: flex; flex-direction: column; gap: 14px">
+      <div style="font-size: 13px; font-weight: 600; letter-spacing: 0.6px; text-transform: uppercase; color: #6F8C96">Green · play / success</div>
+      <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px">
+        <div style="display: flex; flex-direction: column; gap: 6px"><div style="height: 56px; border-radius: 10px; background: #6AD892"></div><div style="font-size: 12px; color: #A3BCC5">300 · #6AD892</div></div>
+        <div style="display: flex; flex-direction: column; gap: 6px"><div style="height: 56px; border-radius: 10px; background: #34C26B; outline: 2px solid #E7F9FF; outline-offset: 2px"></div><div style="font-size: 12px; color: #E7F9FF">400 · #34C26B</div></div>
+        <div style="display: flex; flex-direction: column; gap: 6px"><div style="height: 56px; border-radius: 10px; background: #1FA858"></div><div style="font-size: 12px; color: #A3BCC5">500 · #1FA858</div></div>
+        <div style="display: flex; flex-direction: column; gap: 6px"><div style="height: 56px; border-radius: 10px; background: #178A48"></div><div style="font-size: 12px; color: #A3BCC5">600 · #178A48</div></div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 16px; padding: 14px 16px; background: #113844; border-radius: 12px">
+        <div style="width: 52px; height: 52px; border-radius: 26px; background: #021E27; display: flex; align-items: center; justify-content: center; color: #34C26B">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <div style="font-size: 15px; font-weight: 600; color: #E7F9FF">play = green400</div>
+          <div style="font-size: 13px; color: #A3BCC5">Play icon on video rows. Contrast 7.4 on background, 5.5 on surface.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Red -->
+    <div style="display: flex; flex-direction: column; gap: 14px">
+      <div style="font-size: 13px; font-weight: 600; letter-spacing: 0.6px; text-transform: uppercase; color: #6F8C96">Red · destructive</div>
+      <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px">
+        <div style="display: flex; flex-direction: column; gap: 6px"><div style="height: 56px; border-radius: 10px; background: #FF8F8F"></div><div style="font-size: 12px; color: #A3BCC5">300 · #FF8F8F</div></div>
+        <div style="display: flex; flex-direction: column; gap: 6px"><div style="height: 56px; border-radius: 10px; background: #FF6B6B; outline: 2px solid #E7F9FF; outline-offset: 2px"></div><div style="font-size: 12px; color: #E7F9FF">400 · #FF6B6B</div></div>
+        <div style="display: flex; flex-direction: column; gap: 6px"><div style="height: 56px; border-radius: 10px; background: #E84F52"></div><div style="font-size: 12px; color: #A3BCC5">500 · #E84F52</div></div>
+        <div style="display: flex; flex-direction: column; gap: 6px"><div style="height: 56px; border-radius: 10px; background: #CC3B3F; outline: 2px solid #E7F9FF; outline-offset: 2px"></div><div style="font-size: 12px; color: #E7F9FF">600 · #CC3B3F</div></div>
+      </div>
+      <div style="display: flex; align-items: stretch; background: #113844; border-radius: 12px; overflow: hidden">
+        <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 14px 16px">
+          <div style="font-size: 15px; font-weight: 600; color: #E7F9FF">destructive = red400 · destructiveFill = red600</div>
+          <div style="font-size: 13px; color: #A3BCC5">Delete / Remove text and icons, Recording status: 6.2 on background, 4.6 on surface. Swipe action fill under white: 5.2.</div>
+        </div>
+        <div style="width: 96px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; background: #CC3B3F; color: #FFFFFF; font-size: 13px; font-weight: 600">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/><path d="M10 11v6M14 11v6"/></svg>
+          <span>Delete</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1194,"height":560}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

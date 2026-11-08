@@ -7,9 +7,12 @@
 
 import SwiftUI
 
+/// Экраны NavigationStack: вход → главная с плитками → дочерние экраны разделов.
 enum NavigationDestination: Hashable {
     case login
     case main
+    case videos
+    case watchlist
 }
 
 struct FSPlayerView: View {
@@ -27,9 +30,16 @@ struct FSPlayerView: View {
                         LoginView(navigationPath: $navigationPath)
                             .environmentObject(session)
                     case .main:
-                        MainTabView(navigationPath: $navigationPath)
+                        MainView()
                             .environmentObject(session)
                             .environmentObject(globalSettings)
+                    case .videos:
+                        VideoListView(navigationPath: $navigationPath)
+                            .environmentObject(session)
+                            .environmentObject(globalSettings)
+                    case .watchlist:
+                        WatchlistView()
+                            .environmentObject(session)
                     }
                 }
         }

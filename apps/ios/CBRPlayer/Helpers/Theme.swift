@@ -9,7 +9,7 @@
 
 import SwiftUI
 
-/// Тональные шкалы пяти исходных цветов: 50 — самый светлый, 950 — самый тёмный.
+/// Тональные шкалы семи исходных цветов: 50 — самый светлый, 950 — самый тёмный.
 /// Построены в OKLCH: тон каждого цвета сохраняется, светлота шагов равномерна для
 /// глаза (50 ≈ 0.97 … 950 ≈ 0.22), насыщенность убывает к краям. Исходный цвет
 /// входит в шкалу без изменений на ближайшем по светлоте шаге.
@@ -77,7 +77,34 @@ enum Palette {
     static let yellow700 = Color(hex: 0x6E5401)
     static let yellow800 = Color(hex: 0x543F00)
     static let yellow900 = Color(hex: 0x372901)
-    static let yellow950 = Color(hex: 0x231900)}
+    static let yellow950 = Color(hex: 0x231900)
+
+    // Green — #34C26B (исходный цвет — шаг 400): привычный цвет воспроизведения
+    static let green50 = Color(hex: 0xE9FBEF)
+    static let green100 = Color(hex: 0xCBF5D9)
+    static let green200 = Color(hex: 0x9BE8B6)
+    static let green300 = Color(hex: 0x6AD892)
+    static let green400 = Color(hex: 0x34C26B) // исходный
+    static let green500 = Color(hex: 0x1FA858)
+    static let green600 = Color(hex: 0x178A48)
+    static let green700 = Color(hex: 0x126E3A)
+    static let green800 = Color(hex: 0x0C522B)
+    static let green900 = Color(hex: 0x07371D)
+    static let green950 = Color(hex: 0x042412)
+
+    // Red — #FF6B6B (исходный цвет — шаг 400): удаление и идущая запись
+    static let red50 = Color(hex: 0xFFF0F0)
+    static let red100 = Color(hex: 0xFFDCDC)
+    static let red200 = Color(hex: 0xFFB8B8)
+    static let red300 = Color(hex: 0xFF8F8F)
+    static let red400 = Color(hex: 0xFF6B6B) // исходный
+    static let red500 = Color(hex: 0xE84F52)
+    static let red600 = Color(hex: 0xCC3B3F)
+    static let red700 = Color(hex: 0xA62E31)
+    static let red800 = Color(hex: 0x7F2124)
+    static let red900 = Color(hex: 0x561517)
+    static let red950 = Color(hex: 0x380C0E)
+}
 
 /// Роли цветов. В комментариях — контраст по WCAG к фону, на котором роль
 /// используется (текст ≥ 4.5, иконки и крупные элементы ≥ 3).
@@ -120,16 +147,20 @@ enum Theme {
     /// Текст на primary (6.0).
     static let onPrimary = Color.white
 
-    /// Воспроизведение: иконка play, прогресс плеера (6.0 на фоне, 4.4 на surface).
+    /// Кнопка play в списке видео (7.4 на фоне, 5.5 на surface).
+    static let play = Palette.green400
+    /// Прогресс и бегунок плеера (6.0 на фоне).
     static let playback = Palette.orange400
 
-    /// Удаление: текст и иконки.
-    static let destructive = Palette.orange400
-    /// Заливка удаления под белым текстом (5.4).
-    static let destructiveFill = Palette.orange600
+    /// Удаление: текст и иконки (6.2 на фоне, 4.6 на surface).
+    static let destructive = Palette.red400
+    /// Заливка удаления (свайп) под белым текстом (5.2).
+    static let destructiveFill = Palette.red600
 
     // MARK: Состояния
 
+    /// Идёт запись: статус в списке слежения и сводка на главной (4.6 на surface).
+    static let recording = Palette.red400
     /// Ошибки и предупреждения: текст и значки (9.9 на фоне).
     static let warning = Palette.yellow200
     /// Текст на заливке warning (9.9).

@@ -11,9 +11,7 @@ struct VideoListView: View {
     @EnvironmentObject private var session: SessionStorage
     @EnvironmentObject private var globalSettings: GlobalSettings
     @Binding var navigationPath: [NavigationDestination]
-    /// Меняется, когда в MainTabView нажали «обновить».
-    var refreshSignal = 0
-    
+
     @StateObject private var viewModel = VideoListViewModel()
 
     var body: some View {
@@ -47,8 +45,9 @@ struct VideoListView: View {
             }
         }
         .themedScreenBackground()
+        .navigationTitle("Videos")
         .navigationBarTitleDisplayMode(.inline)
-        .onChange(of: refreshSignal) { Task { await refresh() } }
+        .toolbar { refreshButton }
         .alert("Delete Video?", isPresented: $viewModel.showDeleteConfirmation, presenting: viewModel.videoToDelete) { file in
             Button("Delete", role: .destructive) {
                 Task { await delete(file) }
@@ -68,6 +67,19 @@ struct VideoListView: View {
 // MARK: - Private Subviews & Helpers
 
 private extension VideoListView {
+    var refreshButton: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Button {
+                Task { await refresh() }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(Theme.accent)
+            }
+            .accessibilityLabel("Refresh")
+        }
+    }
+
     var content: some View {
         VStack(spacing: 10) {
             filterField

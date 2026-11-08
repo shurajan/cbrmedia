@@ -46,7 +46,7 @@ struct VideoItemView: View {
                     .frame(width: 20, height: 20)
                     .padding(16)
                     .background(Theme.background)
-                    .foregroundColor(Theme.playback)
+                    .foregroundColor(Theme.play)
                     .clipShape(Circle())
             }
             .buttonStyle(BorderlessButtonStyle())

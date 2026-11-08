@@ -2,7 +2,8 @@
 //  WatchlistView.swift
 //  CBRPlayer
 //
-//  Вкладка «Watchlist»: кого recorder отслеживает и записывает.
+//  Экран «Watchlist»: кого recorder отслеживает и записывает. Открывается с главной,
+//  системная кнопка «назад» возвращает на неё.
 //
 
 import SwiftUI
@@ -10,8 +11,6 @@ import SwiftUI
 struct WatchlistView: View {
     @EnvironmentObject private var session: SessionStorage
     @StateObject private var viewModel = WatchlistViewModel()
-    /// Меняется, когда в MainTabView нажали «обновить».
-    var refreshSignal = 0
 
     var body: some View {
         VStack(spacing: 10) {
@@ -56,7 +55,9 @@ struct WatchlistView: View {
             }
         }
         .themedScreenBackground()
-        .onChange(of: refreshSignal) { Task { await load() } }
+        .navigationTitle("Watchlist")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { refreshButton }
         .onChange(of: viewModel.newUser) { viewModel.actionError = nil }
         .alert("Remove from Watchlist?", isPresented: $viewModel.showDeleteConfirmation, presenting: viewModel.entryToDelete) { entry in
             Button("Remove", role: .destructive) {
@@ -76,6 +77,19 @@ struct WatchlistView: View {
 // MARK: - Subviews & Helpers
 
 private extension WatchlistView {
+    var refreshButton: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Button {
+                Task { await load() }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(Theme.accent)
+            }
+            .accessibilityLabel("Refresh")
+        }
+    }
+
     var addField: some View {
         HStack(spacing: 10) {
             HStack(spacing: 8) {
