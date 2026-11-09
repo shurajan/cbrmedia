@@ -126,6 +126,33 @@ func Scan(dir string) (Meta, error) {
 	}, nil
 }
 
+// ProbeFile — файл в папке видео, по которому ffprobe определит разрешение:
+// init-сегмент fMP4 (#EXT-X-MAP: заголовок с размерами дорожки) или первый
+// сегмент. Пусто, если плейлиста нет или в нём нет сегментов.
+func ProbeFile(dir string) string {
+	f, err := os.Open(filepath.Join(dir, PlaylistFile))
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	first := ""
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		switch {
+		case strings.HasPrefix(line, "#EXT-X-MAP:"):
+			if uri := attribute(line, "URI"); uri != "" {
+				return filepath.Join(dir, filepath.FromSlash(uri))
+			}
+		case line == "" || strings.HasPrefix(line, "#"):
+		case first == "":
+			first = filepath.Join(dir, filepath.FromSlash(line))
+		}
+	}
+	return first
+}
+
 // attribute возвращает значение атрибута key из строки тега (URI="init.mp4").
 func attribute(line, key string) string {
 	i := strings.Index(line, key+"=")

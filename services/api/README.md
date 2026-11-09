@@ -10,7 +10,7 @@ HTTP API для плеера CBRPlayer: авторизация по паролю
 | Метод и путь | Ответ |
 |---|---|
 | `POST /auth` `{"password"}` | `{"token"}`; 401 при неверном пароле |
-| `GET /videos` | `[{id, name, hlsURL, createdAt?, duration, resolution?, sizeMB?, segmentCount, avgSegmentDuration}]`; метаданные — из `meta.json`, который converter кладёт рядом с плейлистом, для видео без него считаются по плейлисту и ffprobe |
+| `GET /videos` | `[{id, name, hlsURL, createdAt?, duration, resolution?, sizeMB?, segmentCount, avgSegmentDuration}]`; метаданные — из `meta.json`, который converter кладёт рядом с плейлистом (старым видео дописывает при очередном проходе); пока файла нет, `duration`, `segmentCount` и прочие — нули |
 | `GET /videos/:name/*` | файлы HLS (`playlist.m3u8`, `.ts`, `.m4s`, `init.mp4`…) |
 | `DELETE /videos/:name` | удалить видео целиком |
 | `GET /watchlist` | `[{user, addedAt, addedBy, enabled, disabledReason?, roomStatus?, recording, updatedAt?}]` |

@@ -71,10 +71,11 @@ func (c *Converter) Run(ctx context.Context, interval time.Duration) {
 }
 
 // RunOnce выполняет один проход: разбирает временные папки прерванных запусков
-// (готовые публикует, остальные удаляет) и преобразует все завершённые записи.
-// Возвращает число опубликованных видео.
+// (готовые публикует, остальные удаляет), дописывает meta.json видео без него
+// и преобразует все завершённые записи. Возвращает число опубликованных видео.
 func (c *Converter) RunOnce(ctx context.Context) int {
 	published := c.cleanupTemp()
+	c.backfillMeta(ctx)
 
 	files, err := c.pending(time.Now())
 	if err != nil {
@@ -257,17 +258,48 @@ func ffmpegArgs(src, dir string, segmentSec int) []string {
 }
 
 // writeMeta считает метаданные готового видео в dir и сохраняет их в meta.json.
-// Разрешение берётся ffprobe'ом из исходника src (он цельный, в отличие от
-// сегментов fMP4); без FFprobe или при его ошибке остаётся пустым.
-func (c *Converter) writeMeta(ctx context.Context, src, dir string) error {
+// Разрешение берётся ffprobe'ом из probeSrc (при публикации — цельный исходник);
+// без FFprobe, пустого probeSrc или при ошибке ffprobe остаётся пустым.
+func (c *Converter) writeMeta(ctx context.Context, probeSrc, dir string) error {
 	m, err := media.Scan(dir)
 	if err != nil {
 		return err
 	}
-	if c.FFprobe != "" {
-		m.Resolution = probeResolution(ctx, c.FFprobe, src)
+	if c.FFprobe != "" && probeSrc != "" {
+		m.Resolution = probeResolution(ctx, c.FFprobe, probeSrc)
 	}
 	return media.Write(dir, m)
+}
+
+// backfillMeta дописывает meta.json видео, опубликованным до его появления:
+// api сам метаданные не считает. Разрешение — по init-сегменту или первому
+// сегменту (media.ProbeFile). Ошибка одного видео не мешает остальным.
+func (c *Converter) backfillMeta(ctx context.Context) {
+	entries, err := os.ReadDir(c.Media)
+	if err != nil {
+		c.Log.Error("scan media", "dir", c.Media, "err", err)
+		return
+	}
+	for _, e := range entries {
+		if ctx.Err() != nil {
+			return
+		}
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		dir := filepath.Join(c.Media, e.Name())
+		if _, err := os.Stat(filepath.Join(dir, media.PlaylistFile)); err != nil {
+			continue
+		}
+		if _, err := media.Read(dir); err == nil {
+			continue
+		}
+		if err := c.writeMeta(ctx, media.ProbeFile(dir), dir); err != nil {
+			c.Log.Warn("write meta.json for an existing video", "video", e.Name(), "err", err)
+			continue
+		}
+		c.Log.Info("meta.json added to an existing video", "video", e.Name())
+	}
 }
 
 // probeTimeout — предел одного запуска ffprobe.

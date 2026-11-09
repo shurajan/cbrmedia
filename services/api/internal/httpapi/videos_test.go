@@ -12,7 +12,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// generousTest gives handlers that may shell out to ffprobe time to finish.
+// generousTest — запас времени для обработчиков, которые читают медиатеку с диска.
 var generousTest = fiber.TestConfig{Timeout: 30 * time.Second, FailOnTimeout: true}
 
 // makeVideoDir creates baseDir/<name> containing a minimal HLS playlist.

@@ -1,4 +1,5 @@
-// Package library — медиатека плеера: каждая папка с playlist.m3u8 в media/ — одно видео.
+// Package library — медиатека плеера: каждая папка с playlist.m3u8 в media/ — одно видео,
+// его метаданные — meta.json от converter (core/media).
 package library
 
 import (
@@ -46,31 +47,17 @@ func (m *MediaInfo) StreamURL() string {
 	return fmt.Sprintf("/videos/%s/playlist.m3u8", url.PathEscape(m.Folder))
 }
 
-// Meta — метаданные видео: из meta.json, который converter пишет при публикации,
-// а для видео без него (опубликованных раньше) — по плейлисту и ffprobe
-// (Playlist). false — в папке нет playlist.m3u8, это не видео.
+// Meta — метаданные видео из meta.json, который converter пишет при публикации
+// (и дописывает старым видео при очередном проходе). false — в папке нет
+// playlist.m3u8, это не видео. Нет или не читается meta.json — нули: видео в
+// списке, converter заполнит файл в ближайшие минуты.
 func (m *MediaInfo) Meta() (media.Meta, bool) {
-	playlist := m.Playlist()
-	if playlist == nil {
+	if _, err := os.Stat(filepath.Join(m.EntryPath, media.PlaylistFile)); err != nil {
 		return media.Meta{}, false
 	}
-	if meta, err := media.Read(m.EntryPath); err == nil {
-		return meta, true
+	meta, err := media.Read(m.EntryPath)
+	if err != nil {
+		return media.Meta{}, true
 	}
-	return media.Meta{
-		Duration:           playlist.Duration(),
-		Resolution:         playlist.Resolution(),
-		SizeMB:             playlist.SizeMB(),
-		SegmentCount:       playlist.SegmentCount(),
-		AvgSegmentDuration: playlist.AvgSegmentDuration(),
-	}, true
-}
-
-// Playlist возвращает плейлист видео или nil, если playlist.m3u8 нет.
-func (m *MediaInfo) Playlist() *Playlist {
-	playlistPath := filepath.Join(m.EntryPath, "playlist.m3u8")
-	if _, err := os.Stat(playlistPath); err == nil {
-		return &Playlist{Path: playlistPath}
-	}
-	return nil
+	return meta, true
 }

@@ -82,6 +82,21 @@ func TestWriteRead(t *testing.T) {
 	}
 }
 
+func TestProbeFile(t *testing.T) {
+	dir := t.TempDir()
+	if got := ProbeFile(dir); got != "" {
+		t.Errorf("ProbeFile(no playlist) = %q", got)
+	}
+	write(t, dir, PlaylistFile, "#EXTM3U\n#EXTINF:6,\n00000.ts\n#EXTINF:6,\n00001.ts\n#EXT-X-ENDLIST\n")
+	if got := ProbeFile(dir); got != filepath.Join(dir, "00000.ts") {
+		t.Errorf("ProbeFile(ts) = %q", got)
+	}
+	write(t, dir, PlaylistFile, "#EXTM3U\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:2,\n00000.m4s\n#EXT-X-ENDLIST\n")
+	if got := ProbeFile(dir); got != filepath.Join(dir, "init.mp4") {
+		t.Errorf("ProbeFile(fmp4) = %q", got)
+	}
+}
+
 func TestAttribute(t *testing.T) {
 	cases := map[string]string{
 		`#EXT-X-MAP:URI="init.mp4"`:                   "init.mp4",

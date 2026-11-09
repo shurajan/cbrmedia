@@ -30,7 +30,8 @@ CBRPlayer ──GET /watchlist/:user/live──▶ api ──status API──▶
 - `POST /auth {"password"}` → `{"token"}` (один действующий токен; новый логин инвалидирует старый)
 - `GET /videos` → `[{id, name, hlsURL, createdAt?, duration, resolution?, sizeMB?, segmentCount, avgSegmentDuration}]`
   — Go: `services/api/internal/httpapi/videos.go` `MediaFile`; Swift: `Models/VideoItemModel.swift`. Метаданные — из
-  `media/<имя>/meta.json` (Go `core/media.Meta`, пишет converter при публикации), для старых видео без него — по плейлисту и ffprobe
+  `media/<имя>/meta.json` (Go `core/media.Meta`, пишет converter при публикации и дописывает старым видео при очередном
+  проходе); api плейлист не разбирает и ffprobe не запускает, видео без meta.json отдаётся с нулями
 - `GET /videos/:name/*` — файлы HLS; `DELETE /videos/:name`
 - `GET/POST /watchlist`, `DELETE /watchlist/:user` — экран «Watchlist» в iOS (открывается плиткой с главной)
   (Go `WatchEntry` в `watchlist.go` ↔ Swift `Models/WatchEntryModel.swift`). `POST` и `/add` в tbot принимают имя

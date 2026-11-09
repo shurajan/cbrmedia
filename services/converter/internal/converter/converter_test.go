@@ -169,6 +169,35 @@ func TestConvertPublishesAndRemovesSource(t *testing.T) {
 	}
 }
 
+// Видео, опубликованные до появления meta.json, получают его при очередном проходе;
+// готовые и временные папки не трогаются.
+func TestRunOnceBackfillsMeta(t *testing.T) {
+	e := newEnv(t, fakeFFmpeg(t))
+	writeFile(t, filepath.Join(e.media, "old", "playlist.m3u8"), "#EXTM3U\n#EXTINF:6,\n00000.ts\n#EXTINF:4,\n00001.ts\n#EXT-X-ENDLIST\n")
+	writeFile(t, filepath.Join(e.media, "old", "00000.ts"), "seg")
+	writeFile(t, filepath.Join(e.media, "old", "00001.ts"), "seg")
+	writeFile(t, filepath.Join(e.media, "done", "playlist.m3u8"), "#EXTM3U\n#EXTINF:6,\n0.ts\n#EXT-X-ENDLIST\n")
+	writeFile(t, filepath.Join(e.media, "done", "meta.json"), `{"duration":99,"segmentCount":1,"avgSegmentDuration":99}`)
+	writeFile(t, filepath.Join(e.media, "notvideo", "readme.txt"), "x")
+
+	if n := e.conv.RunOnce(context.Background()); n != 0 {
+		t.Fatalf("published = %d, want 0", n)
+	}
+	m, err := media.Read(filepath.Join(e.media, "old"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (media.Meta{Duration: 10, SegmentCount: 2, AvgSegmentDuration: 5}); m != want {
+		t.Errorf("backfilled meta = %+v, want %+v", m, want)
+	}
+	if m, _ := media.Read(filepath.Join(e.media, "done")); m.Duration != 99 {
+		t.Errorf("existing meta.json overwritten: %+v", m)
+	}
+	if got := list(t, filepath.Join(e.media, "notvideo")); got != "readme.txt" {
+		t.Errorf("notvideo = %q", got)
+	}
+}
+
 func TestConvertDoesNotOverwriteExistingVideo(t *testing.T) {
 	e := newEnv(t, fakeFFmpeg(t))
 	writeFile(t, filepath.Join(e.media, "rec", "playlist.m3u8"), "old")
