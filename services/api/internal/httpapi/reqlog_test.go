@@ -25,7 +25,7 @@ func newLoggedServer(t *testing.T, level slog.Level) (*Server, *bytes.Buffer) {
 	var buf bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: level}))
 	svc := auth.NewService(filepath.Join(t.TempDir(), "auth.json"))
-	return New(Config{MediaDir: t.TempDir()}, svc, db, log), &buf
+	return New(Config{MediaDir: t.TempDir()}, svc, db, nil, log), &buf
 }
 
 func TestRequestsLoggedOnlyInDebug(t *testing.T) {

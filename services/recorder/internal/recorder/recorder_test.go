@@ -3,17 +3,15 @@ package recorder
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
-	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"cbr/core/statusapi"
 	"cbr/core/store"
 	"cbr/recorder/internal/hls"
 )
@@ -40,12 +38,12 @@ type fakeStatus struct {
 }
 
 type statusResponse struct {
-	room   Room
+	room   statusapi.Room
 	status int
 	err    error
 }
 
-func (f *fakeStatus) Fetch(_ context.Context, _ string) (Room, int, error) {
+func (f *fakeStatus) Fetch(_ context.Context, _ string) (statusapi.Room, int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	r := f.responses[min(f.calls, len(f.responses)-1)]
@@ -265,7 +263,7 @@ func TestWatchNotFoundRejectsUnverifiedUser(t *testing.T) {
 // Первый успешный ответ подтверждает пользователя, после этого 404 считаются по счётчику.
 func TestWatchSuccessMarksVerified(t *testing.T) {
 	nf := statusResponse{status: 404, err: errors.New("not found")}
-	ok := statusResponse{room: Room{Status: "offline"}, status: 200}
+	ok := statusResponse{room: statusapi.Room{Status: "offline"}, status: 200}
 	status := &fakeStatus{responses: []statusResponse{ok, nf}}
 	m, sink := newTestManager(status, &fakeRecorder{})
 
@@ -283,7 +281,7 @@ func TestWatchSuccessMarksVerified(t *testing.T) {
 // Успешный ответ между 404 сбрасывает счётчик: удаление только после notFoundLimit подряд.
 func TestWatchNotFoundCounterResetsOnSuccess(t *testing.T) {
 	nf := statusResponse{status: 404, err: errors.New("not found")}
-	ok := statusResponse{room: Room{Status: "offline"}, status: 200}
+	ok := statusResponse{room: statusapi.Room{Status: "offline"}, status: 200}
 	status := &fakeStatus{responses: []statusResponse{nf, nf, ok, nf, nf, nf}}
 	m, sink := newTestManager(status, &fakeRecorder{})
 	sink.verified["alice"] = true // пользователь уже отвечал успешно
@@ -318,7 +316,7 @@ func TestWatchNotFoundKeepsWatchingWithState(t *testing.T) {
 func TestWatchAccessDeniedKeepsWatchingWithBlockedState(t *testing.T) {
 	status := &fakeStatus{responses: []statusResponse{
 		{status: 401, err: errors.New("unauthorized")},
-		{room: Room{Status: "offline"}, status: 200},
+		{room: statusapi.Room{Status: "offline"}, status: 200},
 	}}
 	m, sink := newTestManager(status, &fakeRecorder{})
 	m.timing.dailyDelay = 50 * time.Millisecond
@@ -375,9 +373,9 @@ func TestWatchClientErrorDisablesUser(t *testing.T) {
 
 func TestWatchRecordsWithFreshURL(t *testing.T) {
 	status := &fakeStatus{responses: []statusResponse{
-		{room: Room{Status: "public", HLSURL: "https://cdn/first.m3u8"}, status: 200},
-		{room: Room{Status: "public", HLSURL: "https://cdn/fresh.m3u8"}, status: 200},
-		{room: Room{Status: "offline"}, status: 200},
+		{room: statusapi.Room{Status: "public", HLSURL: "https://cdn/first.m3u8"}, status: 200},
+		{room: statusapi.Room{Status: "public", HLSURL: "https://cdn/fresh.m3u8"}, status: 200},
+		{room: statusapi.Room{Status: "offline"}, status: 200},
 	}}
 	rec := &fakeRecorder{done: make(chan struct{})}
 	m, sink := newTestManager(status, rec)
@@ -412,7 +410,7 @@ func TestWatchRecordsWithFreshURL(t *testing.T) {
 }
 
 func TestSyncStartsAndStopsWatches(t *testing.T) {
-	status := &fakeStatus{responses: []statusResponse{{room: Room{Status: "offline"}, status: 200}}}
+	status := &fakeStatus{responses: []statusResponse{{room: statusapi.Room{Status: "offline"}, status: 200}}}
 	m, _ := newTestManager(status, &fakeRecorder{})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -457,51 +455,6 @@ func TestDelayFor(t *testing.T) {
 	}
 }
 
-func TestStatusClientFetch(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/live/":
-			fmt.Fprint(w, `{"room_status":"public","broadcaster_username":"live","hls_source":"https://cdn/x.m3u8"}`)
-		case "/api/odd/":
-			fmt.Fprint(w, `{"room_status":"offline","hls_source":null,"broadcaster_username":5}`)
-		case "/api/bad/":
-			fmt.Fprint(w, `{`)
-		default:
-			http.Error(w, "nope", http.StatusNotFound)
-		}
-	}))
-	defer srv.Close()
-	c := NewStatusClient(srv.Client(), srv.URL+"/api")
-	ctx := context.Background()
-
-	room, status, err := c.Fetch(ctx, "live")
-	if err != nil || status != 200 || room != (Room{Status: "public", User: "live", HLSURL: "https://cdn/x.m3u8"}) {
-		t.Errorf("live: %+v %d %v", room, status, err)
-	}
-
-	room, _, err = c.Fetch(ctx, "odd")
-	if err != nil || room != (Room{Status: "offline"}) {
-		t.Errorf("odd types must be tolerated: %+v %v", room, err)
-	}
-
-	if _, status, err = c.Fetch(ctx, "bad"); err == nil || status != 200 {
-		t.Errorf("bad JSON: status=%d err=%v", status, err)
-	}
-
-	if _, status, err = c.Fetch(ctx, "missing"); err == nil || status != 404 {
-		t.Errorf("missing: status=%d err=%v", status, err)
-	}
-}
-
-func TestNewHTTPClientRejectsBadProxy(t *testing.T) {
-	if _, err := NewHTTPClient("http://[::1", discard); err == nil {
-		t.Error("expected error for invalid proxy")
-	}
-	if _, err := NewHTTPClient("", discard); err != nil {
-		t.Errorf("no proxy: %v", err)
-	}
-}
-
 func TestWatchTechnicalFailuresKeepUser(t *testing.T) {
 	// 5xx, сетевая ошибка, 429 и битый JSON — временные: пользователь остаётся, затем опрос идёт дальше.
 	status := &fakeStatus{responses: []statusResponse{
@@ -509,7 +462,7 @@ func TestWatchTechnicalFailuresKeepUser(t *testing.T) {
 		{status: 0, err: errors.New("connection refused")},
 		{status: 429, err: errors.New("too many requests")},
 		{status: 200, err: errors.New("decode JSON")},
-		{room: Room{Status: "offline"}, status: 200},
+		{room: statusapi.Room{Status: "offline"}, status: 200},
 	}}
 	m, sink := newTestManager(status, &fakeRecorder{})
 
@@ -532,11 +485,11 @@ func TestWatchTechnicalFailuresKeepUser(t *testing.T) {
 func TestWatchSkipsRecordingWhenRefreshFails(t *testing.T) {
 	// Свежий URL получить не удалось или стрим уже закончился — запись не начинается.
 	status := &fakeStatus{responses: []statusResponse{
-		{room: Room{Status: "public", HLSURL: "https://cdn/a.m3u8"}, status: 200},
+		{room: statusapi.Room{Status: "public", HLSURL: "https://cdn/a.m3u8"}, status: 200},
 		{status: 502, err: errors.New("bad gateway")},
-		{room: Room{Status: "public", HLSURL: "https://cdn/b.m3u8"}, status: 200},
-		{room: Room{Status: "public"}, status: 200},
-		{room: Room{Status: "offline"}, status: 200},
+		{room: statusapi.Room{Status: "public", HLSURL: "https://cdn/b.m3u8"}, status: 200},
+		{room: statusapi.Room{Status: "public"}, status: 200},
+		{room: statusapi.Room{Status: "offline"}, status: 200},
 	}}
 	rec := &fakeRecorder{}
 	m, sink := newTestManager(status, rec)
@@ -559,9 +512,9 @@ func TestWatchSkipsRecordingWhenRefreshFails(t *testing.T) {
 
 func TestWatchRecordingFailureEmitsEvent(t *testing.T) {
 	status := &fakeStatus{responses: []statusResponse{
-		{room: Room{Status: "public", HLSURL: "https://cdn/a.m3u8"}, status: 200},
-		{room: Room{Status: "public", HLSURL: "https://cdn/a.m3u8"}, status: 200},
-		{room: Room{Status: "offline"}, status: 200},
+		{room: statusapi.Room{Status: "public", HLSURL: "https://cdn/a.m3u8"}, status: 200},
+		{room: statusapi.Room{Status: "public", HLSURL: "https://cdn/a.m3u8"}, status: 200},
+		{room: statusapi.Room{Status: "offline"}, status: 200},
 	}}
 	rec := &fakeRecorder{err: errors.New("disk full")}
 	m, sink := newTestManager(status, rec)
@@ -582,47 +535,10 @@ func TestWatchRecordingFailureEmitsEvent(t *testing.T) {
 	}
 }
 
-func TestStatusClientTruncatesErrorBody(t *testing.T) {
-	page := strings.Repeat("<html>", 1000)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, page, http.StatusForbidden)
-	}))
-	defer srv.Close()
-
-	_, status, err := NewStatusClient(srv.Client(), srv.URL).Fetch(context.Background(), "x")
-	if status != http.StatusForbidden || err == nil {
-		t.Fatalf("status = %d, err = %v", status, err)
-	}
-	if len(err.Error()) > errorBodyLimit+200 {
-		t.Errorf("error message is %d bytes, body must be truncated", len(err.Error()))
-	}
-}
-
-func TestStatusClientTimesOutOnStalledBody(t *testing.T) {
-	defer func(d time.Duration) { statusTimeout = d }(statusTimeout)
-	statusTimeout = 100 * time.Millisecond
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"room_status":`)
-		w.(http.Flusher).Flush()
-		<-r.Context().Done() // тело так и не дописывается
-	}))
-	defer srv.Close()
-
-	start := time.Now()
-	_, _, err := NewStatusClient(srv.Client(), srv.URL).Fetch(context.Background(), "x")
-	if err == nil {
-		t.Fatal("expected error for a stalled response")
-	}
-	if took := time.Since(start); took > 2*time.Second {
-		t.Errorf("Fetch took %v, timeout ignored", took)
-	}
-}
-
 // liveStatus — комната всё время public с hls_source.
 func liveStatus() *fakeStatus {
 	return &fakeStatus{responses: []statusResponse{
-		{room: Room{Status: "public", HLSURL: "https://cdn/a.m3u8"}, status: 200},
+		{room: statusapi.Room{Status: "public", HLSURL: "https://cdn/a.m3u8"}, status: 200},
 	}}
 }
 
@@ -687,8 +603,8 @@ func TestWatchWaitsAfterRecordingEndedByStall(t *testing.T) {
 
 func TestWatchRateLimitUsesRetryAfter(t *testing.T) {
 	status := &fakeStatus{responses: []statusResponse{
-		{status: 429, err: &StatusError{Code: 429, RetryAfter: time.Hour, msg: "slow down"}},
-		{room: Room{Status: "offline"}, status: 200},
+		{status: 429, err: &statusapi.StatusError{Code: 429, RetryAfter: time.Hour, Message: "slow down"}},
+		{room: statusapi.Room{Status: "offline"}, status: 200},
 	}}
 	m, sink := newTestManager(status, &fakeRecorder{})
 	m.timing.techFailure = 30 * time.Millisecond // предел для Retry-After
@@ -719,36 +635,6 @@ func TestRateLimitDelay(t *testing.T) {
 		if got := defaultTiming.rateLimitDelay(ra); got != want {
 			t.Errorf("rateLimitDelay(%v) = %v, want %v", ra, got, want)
 		}
-	}
-}
-
-func TestParseRetryAfter(t *testing.T) {
-	now := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
-	cases := map[string]time.Duration{
-		"":                              0,
-		"120":                           2 * time.Minute,
-		"-5":                            0,
-		"soon":                          0,
-		"Fri, 06 Nov 2026 12:01:30 GMT": 90 * time.Second,
-		"Fri, 06 Nov 2026 11:00:00 GMT": 0,
-	}
-	for v, want := range cases {
-		if got := parseRetryAfter(v, now); got != want {
-			t.Errorf("parseRetryAfter(%q) = %v, want %v", v, got, want)
-		}
-	}
-}
-
-func TestStatusClientReturnsRetryAfter(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Retry-After", "42")
-		http.Error(w, "slow down", http.StatusTooManyRequests)
-	}))
-	defer srv.Close()
-
-	_, status, err := NewStatusClient(srv.Client(), srv.URL).Fetch(context.Background(), "x")
-	if status != http.StatusTooManyRequests || retryAfter(err) != 42*time.Second {
-		t.Errorf("status = %d, retryAfter = %v, err = %v", status, retryAfter(err), err)
 	}
 }
 
@@ -788,12 +674,12 @@ func TestWatchDoesNotRecordStalePlaylistAgain(t *testing.T) {
 func TestWatchForgetsLastSegmentWhenStreamEnds(t *testing.T) {
 	// Стрим закончился по данным status API — новый стрим пишется с начала.
 	status := &fakeStatus{responses: []statusResponse{
-		{room: Room{Status: "public", HLSURL: "https://cdn/a.m3u8"}, status: 200},
-		{room: Room{Status: "public", HLSURL: "https://cdn/a.m3u8"}, status: 200}, // свежий URL
-		{room: Room{Status: "offline"}, status: 200},
-		{room: Room{Status: "public", HLSURL: "https://cdn/b.m3u8"}, status: 200},
-		{room: Room{Status: "public", HLSURL: "https://cdn/b.m3u8"}, status: 200}, // свежий URL
-		{room: Room{Status: "offline"}, status: 200},
+		{room: statusapi.Room{Status: "public", HLSURL: "https://cdn/a.m3u8"}, status: 200},
+		{room: statusapi.Room{Status: "public", HLSURL: "https://cdn/a.m3u8"}, status: 200}, // свежий URL
+		{room: statusapi.Room{Status: "offline"}, status: 200},
+		{room: statusapi.Room{Status: "public", HLSURL: "https://cdn/b.m3u8"}, status: 200},
+		{room: statusapi.Room{Status: "public", HLSURL: "https://cdn/b.m3u8"}, status: 200}, // свежий URL
+		{room: statusapi.Room{Status: "offline"}, status: 200},
 	}}
 	rec := &fakeRecorder{last: "https://cdn/s9.ts"}
 	m, _ := newTestManager(status, rec)

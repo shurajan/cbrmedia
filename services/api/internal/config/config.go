@@ -3,6 +3,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"strings"
 
@@ -19,6 +20,11 @@ const DefaultAddr = ":8000"
 type Config struct {
 	// Addr — адрес для прослушивания, например ":8000".
 	Addr string `json:"addr"`
+	// StatusBaseURL — базовый адрес status API, как base_url в recorder.json; нужен для
+	// GET /watchlist/:user/live (необязательно: без него живой просмотр выключен).
+	StatusBaseURL string `json:"status_base_url"`
+	// Proxy — HTTP-прокси для запросов к status API (необязательно).
+	Proxy string `json:"proxy"`
 }
 
 // Load читает и проверяет конфиг. Если файла нет, используются значения по умолчанию.
@@ -41,7 +47,22 @@ func (c *Config) Normalize() {
 	if c.Addr == "" {
 		c.Addr = DefaultAddr
 	}
+	c.StatusBaseURL = strings.TrimRight(strings.TrimSpace(c.StatusBaseURL), "/")
+	c.Proxy = strings.TrimSpace(c.Proxy)
 }
 
-// Validate проверяет конфиг.
-func (c *Config) Validate() error { return nil }
+// Validate проверяет корректность URL.
+func (c *Config) Validate() error {
+	var errs []error
+	if c.StatusBaseURL != "" {
+		if err := coreconfig.ValidateURL(c.StatusBaseURL); err != nil {
+			errs = append(errs, fmt.Errorf("status_base_url: %w", err))
+		}
+	}
+	if c.Proxy != "" {
+		if err := coreconfig.ValidateURL(c.Proxy); err != nil {
+			errs = append(errs, fmt.Errorf("proxy: %w", err))
+		}
+	}
+	return errors.Join(errs...)
+}

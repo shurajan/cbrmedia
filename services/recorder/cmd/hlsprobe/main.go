@@ -33,10 +33,10 @@ import (
 	"time"
 
 	"cbr/core/home"
+	"cbr/core/statusapi"
 	"cbr/core/store"
 	"cbr/core/svc"
 	"cbr/recorder/internal/config"
-	"cbr/recorder/internal/recorder"
 )
 
 func main() {
@@ -93,7 +93,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		log.Error("create output dir", "err", err)
 		return 1
 	}
-	client, err := recorder.NewHTTPClient(o.proxy, slog.New(slog.DiscardHandler))
+	client, err := statusapi.NewHTTPClient(o.proxy, slog.New(slog.DiscardHandler))
 	if err != nil {
 		log.Error("http client", "err", err)
 		return 1

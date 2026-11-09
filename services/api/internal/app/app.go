@@ -12,6 +12,7 @@ import (
 	"cbr/api/internal/config"
 	"cbr/api/internal/httpapi"
 	"cbr/core/home"
+	"cbr/core/statusapi"
 	"cbr/core/store"
 )
 
@@ -40,9 +41,21 @@ func Run(ctx context.Context, layout home.Layout, log *slog.Logger) error {
 		}
 	}()
 
+	// Живой просмотр включается, только если в api.json задан status_base_url.
+	var live httpapi.LiveFetcher
+	if cfg.StatusBaseURL != "" {
+		httpClient, err := statusapi.NewHTTPClient(cfg.Proxy, log)
+		if err != nil {
+			return err
+		}
+		live = statusapi.NewClient(httpClient, cfg.StatusBaseURL)
+	} else {
+		log.Info("live streams are disabled: status_base_url is not set in api.json")
+	}
+
 	server := httpapi.New(httpapi.Config{
 		Addr:     cfg.Addr,
 		MediaDir: layout.Media,
-	}, authSvc, db, log)
+	}, authSvc, db, live, log)
 	return server.Run(ctx)
 }

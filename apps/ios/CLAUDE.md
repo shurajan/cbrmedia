@@ -1,7 +1,7 @@
 # CBRPlayer (iOS / iPadOS)
 
 SwiftUI-клиент службы `services/api`: логин по паролю, главная с плитками разделов, экраны «Videos» (медиатека,
-HLS-плеер с сохранением позиции) и «Watchlist» (кого recorder отслеживает и записывает).
+HLS-плеер с сохранением позиции) и «Watchlist» (кого recorder отслеживает и записывает, живой просмотр public-стримов).
 
 - Xcode-проект `CBRPlayer.xcodeproj`, схема **CBRPlayer**, только iPad (`TARGETED_DEVICE_FAMILY = 2`), iOS 26.6, Swift 6, bundle `com.bralnin.cbrplayer`.
 - Без внешних SPM-зависимостей. Info.plist генерируется (`GENERATE_INFOPLIST_FILE`, ключи `INFOPLIST_KEY_*` в pbxproj):
@@ -10,8 +10,8 @@ HLS-плеер с сохранением позиции) и «Watchlist» (ко�
 - Группы — file-system synchronized (objectVersion 77): новый `.swift` в `CBRPlayer/` попадает в таргет автоматически, pbxproj править не нужно.
 - Сборка из CLI: `xcodebuild -project CBRPlayer.xcodeproj -scheme CBRPlayer -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M5)' build`
   (нужен симулятор iOS ≥ 26.6).
-- Тесты (Swift Testing): `CBRPlayerTests/VideoListFilterTests` — фильтр видео, `WatchlistTests` — модель `/watchlist` и
-  `WatchlistViewModel` на фейковом сервисе; `CBRPlayerUITests` пуст (шаблоны удалены), сюда кладутся временные UI-тесты для снимков. Deployment target 26.6 у проекта и всех таргетов —
+- Тесты (Swift Testing): `CBRPlayerTests/VideoListFilterTests` — фильтр видео, `WatchlistTests` — модель `/watchlist`,
+  `WatchlistViewModel` и `LivePlayerViewModel` на фейковом сервисе; `CBRPlayerUITests` пуст (шаблоны удалены), сюда кладутся временные UI-тесты для снимков. Deployment target 26.6 у проекта и всех таргетов —
   менять синхронно, иначе тесты не соберутся. Исторические имена `FS*` (от FSPlayer) сохранены.
 
 ## Структура `CBRPlayer/`
@@ -23,13 +23,15 @@ HLS-плеер с сохранением позиции) и «Watchlist» (ко�
 | `Scenes/Main/` | после входа — главная `MainView` (крупный заголовок «Home», строка «Connected to host», сетка 3 плиток в ряд, `maxWidth` 960; без `ScrollView` — в нём крупный заголовок в iOS 26 не рисуется): плитка `HomeTileView` — `NavigationLink(value:)` на дочерний экран; набор плиток фиксированный, новая появляется вместе с новой функцией. Кнопки: назад к входу (слева), настройки (справа). `HomeViewModel` при каждом показе (`onAppear`, в т.ч. после возврата с дочернего экрана) параллельно грузит `/videos` и `/watchlist` для сводки на плитках («48 videos · 112 GB», «5 users · ● 1 recording» цветом `recording`); ошибки не показывает — сводка остаётся прежней или пустой |
 | `Scenes/LoginView/` | `LoginView`, `LoginViewModel` (host + пароль → `AuthService.login`), `HostAndPortInputView` |
 | `Scenes/VideoList/` | `VideoListView` (дочерний экран: заголовок «Videos», системная «назад» → `Home`, своя кнопка «обновить» в `.toolbar`; поле фильтра над таблицей; при пустом результате — «Nothing found» на фоне), `VideoListViewModel` (загрузка, `filterText` → `filteredFiles`: по имени A–Z, подстрока без учёта регистра; удаление с подтверждением), `VideoItemView` |
-| `Scenes/Watchlist/` | `WatchlistView` (дочерний экран с теми же заголовком/«назад»/«обновить»; поле «User name or link» + Add; если итоговое имя отличается от ввода (ссылка, заглавные буквы), подсказка «Will add: <имя>», на сервер уходит только имя в нижнем регистре — `WatchlistViewModel.userName(from:)`; сервер отвечает после проверки recorder'ом (5–8 с) — под полем «Checking <имя>…», поле не очищается, если в нём успели ввести другое; ошибка (в т.ч. «not found, not added») под полем, после любого действия список перечитывается, свайп Remove с подтверждением, автообновление статусов раз в 10 с), `WatchlistViewModel`, `WatchEntryView` (статус: 🔴 запись / 👁 слежение / 🚫 доступ запрещён / ❓ не найден / ⏳ ждёт recorder / ⏸ выключен + кнопка Enable) |
+| `Scenes/Watchlist/` | `WatchlistView` (дочерний экран с теми же заголовком/«назад»/«обновить»; поле «User name or link» + Add; если итоговое имя отличается от ввода (ссылка, заглавные буквы), подсказка «Will add: <имя>», на сервер уходит только имя в нижнем регистре — `WatchlistViewModel.userName(from:)`; сервер отвечает после проверки recorder'ом (5–8 с) — под полем «Checking <имя>…», поле не очищается, если в нём успели ввести другое; ошибка (в т.ч. «not found, not added») под полем, после любого действия список перечитывается, свайп Remove с подтверждением, автообновление статусов раз в 10 с), `WatchlistViewModel`, `WatchEntryView` (статус: 🔴 запись / 👁 слежение / 🚫 доступ запрещён / ❓ не найден / ⏳ ждёт recorder / ⏸ выключен + кнопка Enable; у `isLive` (`roomStatus == "public"`) — кнопка play как в Videos → `liveEntry` → `fullScreenCover` с `LivePlayerView`) |
+| `Scenes/LiveView/` | `LivePlayerView` (модально: «Connecting to <user>…», плеер, экран «<user> is not live now» / «Can't play…» с кнопкой закрыть), `LivePlayerViewModel` (`phase`: `GET /watchlist/:user/live` → `AVURLAsset` прямо на CDN **без** `Authorization` — токен api не уходит на CDN; 409 и конец эфира (`AVPlayerItemDidPlayToEndTime`) → not live, ошибка AVPlayer → can't play; позиция не сохраняется) |
 | `Scenes/VideoView/` | `VideoPlayerView`, `VideoPlayerViewModel` — `AVURLAsset` с заголовком `Authorization` через `AVURLAssetHTTPHeaderFieldsKey`, URL `http://host + hlsURL`, позиция сохраняется на паузе, сбрасывается в конце |
 | `Scenes/Settings/` | `SettingsView`, `GlobalSettings` (оверлей производительности), `PerfomanceMonitor/` |
-| `Controls/FSVideoPlayer/` | свой плеер: `FSPlayerController` (play/pause/seek/scrub, очередь seek), `FSVideoPlayerLayerView`, `FSVideoPlayerView`, `FSVideoScrubber` |
+| `Controls/FSVideoPlayer/` | свой плеер: `FSPlayerController` (play/pause/seek/scrub, очередь seek, `playLive` — play с живого края), `FSVideoPlayerLayerView`, `FSVideoPlayerView` (с `live: LiveInfo` — режим живого стрима: имя по центру сверху, только пауза/play, внизу плашка LIVE и «Watching mm:ss» вместо времени и бегунка), `FSVideoScrubber` |
 | `Services/` | `AuthService`, `VideoService`, `WatchlistService` (singletons `@MainActor`, `Result<_, Error>`; протоколы `@MainActor` — иначе Swift 6 не пропускает), `NetworkServiceError`, `KeychainTokenService` (токен), `UserDataStorageService` (UserDefaults: host, позиции видео), `SessionStorage` (`ObservableObject`: token, host, logout) |
 | `Models/VideoItemModel.swift` | DTO `GET /videos` — должен совпадать с Go `MediaFile` в `services/api/internal/httpapi/videos.go` |
-| `Models/WatchEntryModel.swift` | DTO `GET /watchlist` (Go `WatchEntry` в `watchlist.go`) и вычисляемый `status` |
+| `Models/WatchEntryModel.swift` | DTO `GET /watchlist` (Go `WatchEntry` в `watchlist.go`) и вычисляемые `status`, `isLive` |
+| `Models/LiveStreamModel.swift` | DTO `GET /watchlist/:user/live` (Go `LiveStream` в `live.go`) |
 | `Helpers/Theme.swift` | палитра `Palette` и роли `Theme` (см. ниже), `Color(hex:)`, модификаторы `themedScreenBackground()`, `themedField()` |
 | `Helpers/View+Extension.swift` | оверлей производительности |
 
@@ -54,10 +56,10 @@ HLS-плеер с сохранением позиции) и «Watchlist» (ко�
 | `accent` | sky400 (также `AccentColor`) | текст и иконки интерактивных элементов, иконка плитки, статус «Watching» (4.8 на surface) |
 | `accentFill` / `accentPressed` | sky500 / sky300 | дорожка переключателя / нажатое состояние |
 | `primary` / `primaryPressed` / `onPrimary` | ocean700 / ocean800 / белый | заливка кнопок Login, Back to Login, Add, Enable |
-| `play` | green400 | иконка play в списке видео (7.4 на фоне, 5.5 на surface) |
+| `play` | green400 | иконка play в списке видео и у public-строк Watchlist (7.4 на фоне, 5.5 на surface) |
 | `playback` | orange400 | прогресс и бегунок плеера |
 | `destructive` / `destructiveFill` | red400 / red600 | удаление: текст и иконки (4.6 на surface) / заливка свайпа под белым (5.2) |
-| `recording` | red400 | статус «Recording» в Watchlist, точка и «N recording» на плитке главной |
+| `recording` | red400 | статус «Recording» в Watchlist, точка и «N recording» на плитке главной, точка плашки LIVE в живом плеере |
 | `warning` / `onWarning` | yellow200 / deep950 | тексты ошибок, значок ошибки в плеере, оверлей производительности, статусы «Disabled» и «Access denied» |
 | `info` | sky400 | информационные сообщения |
 
@@ -73,6 +75,9 @@ HLS-плеер с сохранением позиции) и «Watchlist» (ко�
 
 - Состояния пользователей без запущенного recorder: добавить через `POST /watchlist`, затем прямо в базе
   `sqlite3 $CBR_HOME/data/cbr.db` — `UPDATE watchlist SET enabled=0, disabled_reason=…`, `INSERT INTO watch_state(user, room_status, recording, updated_at)` (время в unix ms).
+- Живой плеер без настоящего стрима: `ffmpeg -re -f lavfi -i testsrc2=… -f hls -hls_list_size 6 -hls_flags delete_segments`
+  в папку, раздать её и JSON status API (`<папка>/<user>/index.html` с `room_status`/`hls_source`) через
+  `python3 -m http.server`, в `api.json` — `status_base_url` на него; `hls_source` на `127.0.0.1` ATS пропускает.
 - Приложение помнит `host:port` с прошлого входа — в тесте поля очищать перед вводом.
 - Нажатие на плитку, пока исчезает диалог пароля, теряется — повторять, пока не появится дочерний экран.
 - Кнопка удаления в системном алерте красноватая — это цвет iOS, палитрой не задаётся.

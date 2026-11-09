@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>cbr — live: connecting</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,"SF Pro Text","Helvetica Neue",Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:#FFFFFF;text-decoration:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</helmet>
+<!-- Модальный живой плеер (fullScreenCover поверх Watchlist): как плеер записей, но без перемотки -->
+<div style="width: 1194px; height: 834px; box-sizing: border-box; background: #000000; color: #FFFFFF; position: relative; overflow: hidden">
+  <div style="position: absolute; inset: 0; display: flex; flex-direction: column">
+    <div style="display: flex; align-items: center; padding: 16px 16px 0">
+    <a href="Watchlist.dc.html" aria-label="Close" style="width: 53px; height: 53px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 0 4px rgba(0,0,0,.6))">
+      <svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </a>
+    </div>
+    <!-- Пока api запрашивает свежую ссылку у status API и AVPlayer грузит первый плейлист -->
+    <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px">
+      <div style="width: 30px; height: 30px; border-radius: 15px; border: 3px solid rgba(97,168,204,.25); border-top-color: #61A8CC; animation: spin 1s linear infinite"></div>
+      <div style="font-size: 17px; color: #A3BCC5">Connecting to alice…</div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1194,"height":834}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

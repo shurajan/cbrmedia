@@ -9,7 +9,16 @@ import AVKit
 struct FSVideoPlayerView: View {
 
     @ObservedObject var controller: FSPlayerController
+    /// Live stream mode: no seeking, a LIVE badge instead of time and scrubber.
+    var live: LiveInfo?
     var onClose: (() -> Void)?
+
+    struct LiveInfo {
+        /// Shown in the center of the top bar.
+        let title: String
+        /// When the viewer joined: "Watching mm:ss" counts from here.
+        let joinedAt: Date
+    }
 
     @State private var showControls = true
     @State private var isScrubbing = false
@@ -21,9 +30,11 @@ struct FSVideoPlayerView: View {
 
     init(
         controller: FSPlayerController,
+        live: LiveInfo? = nil,
         onClose: (() -> Void)? = nil
     ) {
         self.controller = controller
+        self.live = live
         self.onClose = onClose
     }
 
@@ -90,7 +101,11 @@ struct FSVideoPlayerView: View {
                     centerControls
                     Spacer()
                 }
-                bottomBar
+                if let live {
+                    liveBottomBar(live)
+                } else {
+                    bottomBar
+                }
             }
         }
     }
@@ -140,6 +155,15 @@ struct FSVideoPlayerView: View {
 
             Spacer()
 
+            if let live {
+                Text(live.title)
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .shadow(radius: 4)
+                    .lineLimit(1)
+                Spacer()
+            }
+
             overlayButton(
                 icon: isAspectFill
                     ? "arrow.down.right.and.arrow.up.left"
@@ -156,7 +180,20 @@ struct FSVideoPlayerView: View {
 
     // MARK: - Center Controls
 
+    @ViewBuilder
     private var centerControls: some View {
+        if live != nil {
+            // Live: pause/play only; play returns to the live edge.
+            overlayButton(icon: controller.isPlaying ? "pause.fill" : "play.fill", size: 48) {
+                controller.isPlaying ? controller.pause() : controller.playLive()
+                registerInteraction()
+            }
+        } else {
+            seekableCenterControls
+        }
+    }
+
+    private var seekableCenterControls: some View {
         HStack(spacing: 64) {
             overlayButton(icon: "gobackward.10", size: 32) {
                 controller.skip(by: -10)
@@ -207,6 +244,36 @@ struct FSVideoPlayerView: View {
             .padding(.horizontal, 12)
         }
         .padding(.bottom, 16)
+    }
+
+    // MARK: - Live Bottom Bar
+
+    private func liveBottomBar(_ live: LiveInfo) -> some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(Theme.recording)
+                    .frame(width: 8, height: 8)
+                Text("LIVE")
+                    .font(.footnote.weight(.bold))
+                    .tracking(0.8)
+                    .foregroundColor(.white)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 26)
+            .background(Color.black.opacity(0.5), in: Capsule())
+
+            TimelineView(.periodic(from: live.joinedAt, by: 1)) { context in
+                Text("Watching \(Self.formatTime(context.date.timeIntervalSince(live.joinedAt)))")
+                    .font(.footnote.monospacedDigit())
+                    .foregroundColor(.white)
+                    .shadow(radius: 4)
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 28)
     }
 
     private var displayedTime: Double {

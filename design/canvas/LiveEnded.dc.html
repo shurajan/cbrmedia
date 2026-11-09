@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>cbr — live: not available</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,"SF Pro Text","Helvetica Neue",Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:#FFFFFF;text-decoration:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</helmet>
+<!-- Модальный живой плеер (fullScreenCover поверх Watchlist): как плеер записей, но без перемотки -->
+<div style="width: 1194px; height: 834px; box-sizing: border-box; background: #000000; color: #FFFFFF; position: relative; overflow: hidden">
+  <!-- Кадр стрима (заглушка) -->
+  <div style="position: absolute; inset: 0; background: radial-gradient(ellipse at 35% 40%, #24333a 0%, #1b2a31 45%, #07100f 100%)"></div>
+
+  <!-- Ошибка: как errorOverlay плеера записей — затемнение 60 %, значок warning, текст, только «закрыть» -->
+  <div style="position: absolute; inset: 0; background: rgba(0,0,0,.6); display: flex; flex-direction: column">
+    <div style="display: flex; align-items: center; padding: 8px 16px 0">
+    <a href="Watchlist.dc.html" aria-label="Close" style="width: 46px; height: 46px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 0 4px rgba(0,0,0,.6))">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </a>
+    </div>
+    <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 0 40px; text-align: center">
+      <svg width="44" height="40" viewBox="0 0 24 22" aria-hidden="true"><path d="M12 1 23 21H1z" fill="#F0BD22"/><path d="M12 8v6" stroke="#021E27" stroke-width="2.2" stroke-linecap="round"/><circle cx="12" cy="17.3" r="1.3" fill="#021E27"/></svg>
+      <div style="font-size: 17px">alice is not live now</div>
+      <div style="font-size: 15px; color: #A3BCC5">The stream ended or became private. Recordings appear in Videos.</div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1194,"height":834}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

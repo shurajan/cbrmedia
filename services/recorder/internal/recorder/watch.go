@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"cbr/core/ctxutil"
+	"cbr/core/statusapi"
 	"cbr/core/store"
 	"cbr/recorder/internal/hls"
 )
@@ -73,7 +74,7 @@ func (m *Manager) watch(ctx context.Context, user string, initialDelay time.Dura
 			default:
 				switch {
 				case status == http.StatusTooManyRequests:
-					backoff = m.timing.rateLimitDelay(retryAfter(err))
+					backoff = m.timing.rateLimitDelay(statusapi.RetryAfter(err))
 					log.Warn("rate limited, backing off", "backoff", backoff)
 				case status >= http.StatusInternalServerError || status == 0:
 					backoff = m.timing.techFailure

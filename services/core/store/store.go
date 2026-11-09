@@ -217,6 +217,15 @@ func (s *Store) Verified(ctx context.Context, user string) (bool, error) {
 	return verified, nil
 }
 
+// HasUser сообщает, есть ли пользователь в списке слежения (включённый или нет).
+func (s *Store) HasUser(ctx context.Context, user string) (bool, error) {
+	var n int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM watchlist WHERE user = ?`, user).Scan(&n); err != nil {
+		return false, fmt.Errorf("has user: %w", err)
+	}
+	return n > 0, nil
+}
+
 // MarkVerified отмечает пользователя подтверждённым (см. Verified).
 func (s *Store) MarkVerified(ctx context.Context, user string) error {
 	if _, err := s.db.ExecContext(ctx,

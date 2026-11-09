@@ -13,6 +13,8 @@ enum NetworkServiceError: LocalizedError {
     case decodingError(message: String)
     case invalidPassword(message: String)
     case serverError(message: String)
+    /// 409: состояние на сервере не позволяет действие (например, стрим уже не public).
+    case conflict(message: String)
 
     var errorDescription: String? {
         switch self {
@@ -21,7 +23,8 @@ enum NetworkServiceError: LocalizedError {
                 .invalidResponse(let message),
                 .decodingError(let message),
                 .invalidPassword(let message),
-                .serverError(let message):
+                .serverError(let message),
+                .conflict(let message):
             return message
         }
     }

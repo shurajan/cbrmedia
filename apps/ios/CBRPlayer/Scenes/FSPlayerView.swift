@@ -40,6 +40,7 @@ struct FSPlayerView: View {
                     case .watchlist:
                         WatchlistView()
                             .environmentObject(session)
+                            .environmentObject(globalSettings)
                     }
                 }
         }

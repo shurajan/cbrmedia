@@ -1,4 +1,6 @@
-package recorder
+// Package statusapi — клиент внешнего status API: состояние комнаты пользователя
+// и текущая ссылка на HLS-стрим. Нужен recorder (опрос и запись) и api (живой просмотр).
+package statusapi
 
 import (
 	"context"
@@ -22,15 +24,15 @@ type Room struct {
 	HLSURL string // hls_source; пусто, если стрим не идёт
 }
 
-// StatusClient опрашивает status API: GET <baseURL>/<user>/.
-type StatusClient struct {
+// Client опрашивает status API: GET <baseURL>/<user>/.
+type Client struct {
 	client  *http.Client
 	baseURL string
 }
 
-// NewStatusClient создаёт клиент status API.
-func NewStatusClient(client *http.Client, baseURL string) *StatusClient {
-	return &StatusClient{client: client, baseURL: baseURL}
+// NewClient создаёт клиент status API.
+func NewClient(client *http.Client, baseURL string) *Client {
+	return &Client{client: client, baseURL: baseURL}
 }
 
 // Пределы одного запроса к status API: транспорт ограничивает только соединение
@@ -44,7 +46,7 @@ const (
 
 // Fetch возвращает состояние комнаты и HTTP-статус ответа (0 — сетевая ошибка).
 // Не-2xx и некорректный JSON считаются ошибкой.
-func (c *StatusClient) Fetch(ctx context.Context, user string) (Room, int, error) {
+func (c *Client) Fetch(ctx context.Context, user string) (Room, int, error) {
 	ctx, cancel := context.WithTimeout(ctx, statusTimeout)
 	defer cancel()
 	endpoint := c.baseURL + "/" + user + "/"
@@ -62,14 +64,14 @@ func (c *StatusClient) Fetch(ctx context.Context, user string) (Room, int, error
 	status := resp.StatusCode
 	body, err := io.ReadAll(io.LimitReader(resp.Body, statusMaxBody))
 	if status < 200 || status >= 300 {
-		// Статус известен и без тела — по нему classifyFailure решает, что делать.
+		// Статус известен и без тела — по нему вызывающий решает, что делать.
 		if len(body) > errorBodyLimit {
 			body = append(body[:errorBodyLimit:errorBodyLimit], "…"...)
 		}
 		return Room{}, status, &StatusError{
 			Code:       status,
 			RetryAfter: parseRetryAfter(resp.Header.Get("Retry-After"), time.Now()),
-			msg:        fmt.Sprintf("HTTP %d from %s: %s", status, endpoint, body),
+			Message:    fmt.Sprintf("HTTP %d from %s: %s", status, endpoint, body),
 		}
 	}
 	if err != nil {
@@ -96,13 +98,13 @@ func (c *StatusClient) Fetch(ctx context.Context, user string) (Room, int, error
 type StatusError struct {
 	Code       int
 	RetryAfter time.Duration // из заголовка Retry-After; 0 — не задан
-	msg        string
+	Message    string
 }
 
-func (e *StatusError) Error() string { return e.msg }
+func (e *StatusError) Error() string { return e.Message }
 
-// retryAfter возвращает Retry-After из ошибки Fetch или 0.
-func retryAfter(err error) time.Duration {
+// RetryAfter возвращает Retry-After из ошибки Fetch или 0.
+func RetryAfter(err error) time.Duration {
 	var se *StatusError
 	if errors.As(err, &se) {
 		return se.RetryAfter
@@ -124,7 +126,7 @@ func parseRetryAfter(v string, now time.Time) time.Duration {
 	return 0
 }
 
-// NewHTTPClient создаёт HTTP-клиент для опроса и скачивания стримов.
+// NewHTTPClient создаёт HTTP-клиент для опроса status API (и скачивания стримов в recorder).
 //
 // Таймауты покрывают установку соединения и ожидание заголовков, но не чтение
 // тела, поэтому долгие загрузки сегментов не прерываются.
@@ -138,7 +140,7 @@ func NewHTTPClient(proxy string, log *slog.Logger) (*http.Client, error) {
 		TLSHandshakeTimeout:   15 * time.Second,
 		ResponseHeaderTimeout: 30 * time.Second,
 		IdleConnTimeout:       90 * time.Second,
-		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // осознанно: см. README.md
+		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // осознанно: см. recorder/README.md
 	}
 	log.Warn("TLS verification is DISABLED for status polling and stream downloads")
 

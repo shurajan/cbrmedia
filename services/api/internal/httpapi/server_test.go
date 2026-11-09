@@ -27,7 +27,7 @@ func TestServerServeAndShutdown(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	srv := New(Config{MediaDir: media}, svc, db, discard)
+	srv := New(Config{MediaDir: media}, svc, db, nil, discard)
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

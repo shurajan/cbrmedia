@@ -7,7 +7,7 @@
 | Файл | Что |
 |------|-----|
 | `tokens.json` | палитра (7 шкал 50…950, OKLCH) и роли цветов с назначением; радиусы и отступы плиток |
-| `canvas/*.dc.html` | артборды iPad 1194×834: `Login`, `Main` (главная с плитками), `Videos`, `Watchlist`, `Palette` (новые шкалы green/red) |
+| `canvas/*.dc.html` | артборды iPad 1194×834: `Login`, `Main` (главная с плитками), `Videos`, `Watchlist`, `LiveConnecting` / `LivePlayer` / `LiveEnded` (живой плеер), `Palette` (новые шкалы green/red) |
 | `canvas/canvas.json` | раскладка артбордов на холсте и заметки о навигации |
 
 Холст с кликабельным прототипом: https://claude.ai/artifact/5LhFDWrqaSGvL25sc45g15 (приватный). Артборды — обычный HTML:
@@ -21,6 +21,9 @@ Login ──вход──▶ Home (плитки) ──плитка──▶ Vi
                    │  ▲                     │ назад
                    │  └─────────────────────┘
                    └───плитка──▶ Watchlist ──назад──▶ Home
+                                    │ play (public)  ▲
+                                    ▼                │ закрыть
+                                  Live (модально) ───┘
 ```
 
 - **Login** — крупный заголовок, поля host / port / password, кнопка `primary`.
@@ -39,6 +42,12 @@ Login ──вход──▶ Home (плитки) ──плитка──▶ Vi
 - **Watchlist** — поле «User name or link» + кнопка Add (`primary`); строка: иконка статуса 22 px, имя, статус,
   «Added … via …». Цвета статусов: Recording — `recording`, Watching — `accent`, Waiting — `textTertiary`,
   Not found — `textSecondary`, Disabled и Access denied — `warning`; у выключенного кнопка Enable (`primary`).
+  У строки с `roomStatus` = `public` (идёт запись или нет) справа кнопка play — та же, что в Videos.
+- **Live** (модально поверх Watchlist, на весь экран) — плеер записей без перемотки: чёрный фон, оверлей 35 %,
+  белые кнопки, автоскрытие 3 с. Сверху: закрыть, имя пользователя по центру, заполнение экрана; в центре только
+  пауза/play (play после паузы — к живому краю), без ±10 с; внизу вместо времени и бегунка — плашка LIVE
+  (точка `recording` на чёрном 50 %) и «Watching mm:ss». Состояния: «Connecting to <user>…» (индикатор `accent`,
+  текст `textSecondary`) и ошибка как у плеера записей — значок `warning`, «<user> is not live now», только «закрыть».
 
 ## Цвета
 

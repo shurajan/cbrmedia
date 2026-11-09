@@ -12,12 +12,13 @@ import (
 	"sync"
 	"time"
 
+	"cbr/core/statusapi"
 	"cbr/recorder/internal/hls"
 )
 
 // StatusFetcher получает состояние комнаты пользователя.
 type StatusFetcher interface {
-	Fetch(ctx context.Context, user string) (Room, int, error)
+	Fetch(ctx context.Context, user string) (statusapi.Room, int, error)
 }
 
 // StreamRecorder определяет формат и записывает стрим.

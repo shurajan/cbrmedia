@@ -8,6 +8,7 @@
 //	GET    /watchlist                список слежения с состоянием (Bearer)
 //	POST   /watchlist                {"user": "..."} добавить     (Bearer)
 //	DELETE /watchlist/:user          убрать из слежения          (Bearer)
+//	GET    /watchlist/:user/live     свежая ссылка на живой стрим (Bearer)
 //	GET    /events?after=ID&limit=N  журнал событий recorder     (Bearer)
 package httpapi
 
@@ -41,7 +42,8 @@ type Server struct {
 }
 
 // New создаёт сервер и регистрирует маршруты.
-func New(cfg Config, authSvc *auth.Service, db *store.Store, log *slog.Logger) *Server {
+// live — источник ссылок на живые стримы; nil — живой просмотр выключен (503).
+func New(cfg Config, authSvc *auth.Service, db *store.Store, live LiveFetcher, log *slog.Logger) *Server {
 	app := fiber.New()
 
 	// Запросы (в том числе каждый сегмент видео) логируются только с -debug.
@@ -58,6 +60,7 @@ func New(cfg Config, authSvc *auth.Service, db *store.Store, log *slog.Logger) *
 	app.Get("/watchlist", listWatchlist(db))
 	app.Post("/watchlist", addToWatchlist(db, store.FirstCheckTimeout))
 	app.Delete("/watchlist/:user", removeFromWatchlist(db))
+	app.Get("/watchlist/:user/live", liveStream(db, live, log))
 	app.Get("/events", listEvents(db))
 
 	return &Server{app: app, cfg: cfg, log: log}

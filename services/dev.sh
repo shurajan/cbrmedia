@@ -59,11 +59,18 @@ ensure_config() {
   return 1
 }
 
+# live_hint: api.json необязателен, но без status_base_url не работает GET /watchlist/:user/live.
+live_hint() {
+  grep -q '"status_base_url"[[:space:]]*:[[:space:]]*"[^"]' "$CBR_HOME/config/api.json" 2>/dev/null && return 0
+  echo "ℹ️  api: живой просмотр выключен — добавьте в $CBR_HOME/config/api.json \"status_base_url\" (как base_url в recorder.json)."
+}
+
 # ready <служба>: 0 — службу можно запускать.
 ready() {
   case "$1" in
     recorder | tbot) ensure_config "$1" ;;
     api)
+      live_hint
       [ -f "$CBR_HOME/config/auth.json" ] && return 0
       echo "⚠️  api: нет пароля плеера. Задайте его и запустите скрипт снова:"
       echo "    CBR_HOME=$CBR_HOME $CBR_HOME/bin/api hash-password --password <пароль>"

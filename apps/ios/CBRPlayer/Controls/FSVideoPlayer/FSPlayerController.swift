@@ -49,6 +49,14 @@ final class FSPlayerController: ObservableObject {
         isPlaying ? pause() : play()
     }
 
+    /// Live stream: resume at the live edge instead of where it was paused.
+    func playLive() {
+        if let range = player.currentItem?.seekableTimeRanges.last?.timeRangeValue {
+            player.seek(to: range.end)
+        }
+        player.play()
+    }
+
     func skip(by seconds: Double) {
         seek(to: currentTime + seconds)
     }

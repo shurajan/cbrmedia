@@ -10,6 +10,7 @@ import SwiftUI
 
 struct WatchlistView: View {
     @EnvironmentObject private var session: SessionStorage
+    @EnvironmentObject private var globalSettings: GlobalSettings
     @StateObject private var viewModel = WatchlistViewModel()
 
     var body: some View {
@@ -71,6 +72,10 @@ struct WatchlistView: View {
             await load()
             await withSession { host, token in await viewModel.poll(host: host, token: token) }
         }
+        .fullScreenCover(item: $viewModel.liveEntry) { entry in
+            LivePlayerView(user: entry.user, session: session)
+                .environmentObject(globalSettings)
+        }
     }
 }
 
@@ -126,6 +131,8 @@ private extension WatchlistView {
             ForEach(viewModel.entries) { entry in
                 WatchEntryView(entry: entry, isBusy: viewModel.isSubmitting) {
                     Task { await withSession { host, token in await viewModel.enable(entry, host: host, token: token) } }
+                } onPlay: {
+                    viewModel.liveEntry = entry
                 }
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {

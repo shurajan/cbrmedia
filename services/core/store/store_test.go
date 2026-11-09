@@ -168,6 +168,20 @@ func TestConcurrentProcesses(t *testing.T) {
 	}
 }
 
+func TestHasUser(t *testing.T) {
+	ctx := context.Background()
+	s, _ := openTest(t)
+	_ = s.AddUser(ctx, "alice", "api")
+	_ = s.AddUser(ctx, "bob", "api")
+	_ = s.DisableUser(ctx, "bob", "HTTP 400")
+
+	for user, want := range map[string]bool{"alice": true, "bob": true, "nobody": false} {
+		if got, err := s.HasUser(ctx, user); err != nil || got != want {
+			t.Errorf("HasUser(%q) = %v, %v; want %v", user, got, err, want)
+		}
+	}
+}
+
 func TestVerified(t *testing.T) {
 	ctx := context.Background()
 	s, _ := openTest(t)

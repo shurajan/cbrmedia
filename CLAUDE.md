@@ -21,6 +21,7 @@ tbot (Telegram) / api (iOS) ──пишут──▶ cbr.db: watchlist ──�
                     └──── events, watch_state ◀──────────────────┘
 converter (ffmpeg -c copy, каждые 5 мин; в dev.sh — 1 мин): recordings ──▶ ~/.cbr/media/<имя>/playlist.m3u8
 CBRPlayer ──HTTP :8000 (Bearer)──▶ api ──▶ ~/.cbr/media
+CBRPlayer ──GET /watchlist/:user/live──▶ api ──status API──▶ hls_source ──▶ CBRPlayer играет прямо с CDN
 ```
 
 ## Контракт API (менять синхронно в Go и Swift)
@@ -34,6 +35,10 @@ CBRPlayer ──HTTP :8000 (Bearer)──▶ api ──▶ ~/.cbr/media
   или ссылку на страницу, сохраняется только имя в нижнем регистре (`DELETE` и `/del` тоже приводят имя к нижнему) (Go `store.UserFromInput` ↔ Swift `WatchlistViewModel.userName(from:)`).
   Ответ на добавление — после первой проверки recorder'ом (5–8 с): 404, если пользователя нет.
   `roomStatus` `blocked` / `not found` (Go `store.Room*`) ↔ Swift `WatchEntryModel.Status.blocked/.notFound`
+- `GET /watchlist/:user/live` → `{user, roomStatus, hlsURL}` — свежая ссылка на живой стрим (api спрашивает status API;
+  нужен `status_base_url` в `api.json`); 409, если не `public` (Go `LiveStream` в `live.go` ↔ Swift `Models/LiveStreamModel.swift`,
+  409 → `NetworkServiceError.conflict`). Плеер открывает `hlsURL` напрямую на CDN, без Bearer. Кнопка play в Watchlist —
+  у `roomStatus == "public"` (Go `roomPublic` ↔ Swift `WatchEntryModel.isLive`)
 - `GET /events?after=` — пока не используется клиентами; полная таблица — `services/api/README.md`
 - Всё, кроме `/auth`, требует `Authorization: Bearer <token>`. Транспорт — plain HTTP (`http://host:port`).
 

@@ -12,6 +12,8 @@ struct WatchEntryView: View {
     var isBusy = false
     /// Снова включить пользователя; кнопка показывается только у выключенных.
     var onEnable: () -> Void = {}
+    /// Смотреть живой стрим; кнопка показывается только у public.
+    var onPlay: () -> Void = {}
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -48,6 +50,20 @@ struct WatchEntryView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(Theme.primary)
                 .disabled(isBusy)
+            } else if entry.isLive {
+                // Как кнопка play в списке видео.
+                Button(action: onPlay) {
+                    Image(systemName: "play.fill")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 20, height: 20)
+                        .padding(16)
+                        .background(Theme.background)
+                        .foregroundColor(Theme.play)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(BorderlessButtonStyle())
+                .accessibilityLabel("Watch \(entry.user) live")
             }
         }
         .padding(.vertical, 8)

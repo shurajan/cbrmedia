@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"cbr/core/home"
+	"cbr/core/statusapi"
 	"cbr/core/store"
 	"cbr/recorder/internal/config"
 	"cbr/recorder/internal/hls"
@@ -51,12 +52,12 @@ func Run(ctx context.Context, layout home.Layout, opts Options, log *slog.Logger
 	}
 	hls.RecoverPartial(layout.Recordings, log.With("component", "hls"))
 
-	httpClient, err := recorder.NewHTTPClient(cfg.Proxy, log)
+	httpClient, err := statusapi.NewHTTPClient(cfg.Proxy, log)
 	if err != nil {
 		return err
 	}
 	manager := recorder.NewManager(
-		recorder.NewStatusClient(httpClient, cfg.BaseURL),
+		statusapi.NewClient(httpClient, cfg.BaseURL),
 		&hls.Recorder{Client: httpClient, Dir: layout.Recordings, Log: log.With("component", "hls")},
 		db,
 		log,

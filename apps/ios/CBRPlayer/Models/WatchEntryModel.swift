@@ -36,6 +36,11 @@ struct WatchEntryModel: Identifiable, Equatable, Codable {
     /// (Go `store.RoomBlocked`, `store.RoomNotFound`).
     static let roomBlocked = "blocked"
     static let roomNotFound = "not found"
+    /// Комната открыта — стрим можно смотреть (Go `roomPublic` в live.go).
+    static let roomPublic = "public"
+
+    /// Можно присоединиться к живому стриму: показывается кнопка play.
+    var isLive: Bool { enabled && roomStatus == Self.roomPublic }
 
     var status: Status {
         if !enabled { return .disabled(reason: disabledReason ?? "") }

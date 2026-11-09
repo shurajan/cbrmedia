@@ -22,6 +22,8 @@ final class WatchlistViewModel: ObservableObject {
     /// Кого сейчас добавляем: сервер отвечает после первой проверки recorder'ом (5–8 с).
     @Published var checkingUser: String?
     @Published var entryToDelete: WatchEntryModel?
+    /// Чей живой стрим открыт в модальном плеере.
+    @Published var liveEntry: WatchEntryModel?
     @Published var showDeleteConfirmation = false
 
     /// Как часто обновлять статусы, пока экран открыт.

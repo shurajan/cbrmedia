@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import Testing
 @testable import CBRPlayer
@@ -37,6 +38,13 @@ final class FakeWatchlistService: WatchlistServiceProtocol {
         removed.append(user)
         entries.removeAll { $0.user == user }
         return .success(())
+    }
+
+    /// Ответ GET /watchlist/:user/live; по умолчанию — 409 (не public).
+    var liveResult: Result<LiveStreamModel, Error> = .failure(NetworkServiceError.conflict(message: "not live now"))
+
+    func live(user: String, host: String, token: String) async -> Result<LiveStreamModel, Error> {
+        liveResult
     }
 }
 
@@ -209,5 +217,64 @@ struct WatchlistViewModelTests {
         service.failNext = "network down"
         await vm.load(host: "h", token: "t")
         #expect(vm.loadError == "network down")
+    }
+}
+
+struct LiveStreamTests {
+
+    @Test func liveOnlyForEnabledPublic() {
+        #expect(WatchEntryModel.make("a", room: "public", recording: true, updatedAt: "x").isLive)
+        #expect(WatchEntryModel.make("b", room: "public", updatedAt: "x").isLive)
+        #expect(!WatchEntryModel.make("c", room: "private", updatedAt: "x").isLive)
+        #expect(!WatchEntryModel.make("d", room: "offline", updatedAt: "x").isLive)
+        #expect(!WatchEntryModel.make("e").isLive)
+        #expect(!WatchEntryModel.make("f", enabled: false, room: "public").isLive)
+    }
+
+    @Test func decodesLiveResponse() throws {
+        let json = #"{"user":"alice","roomStatus":"public","hlsURL":"https://cdn/x.m3u8?session=1"}"#
+        let stream = try JSONDecoder().decode(LiveStreamModel.self, from: Data(json.utf8))
+        #expect(stream == LiveStreamModel(user: "alice", roomStatus: "public", hlsURL: "https://cdn/x.m3u8?session=1"))
+    }
+
+    @MainActor @Test func playsFreshLink() async {
+        let service = FakeWatchlistService()
+        service.liveResult = .success(LiveStreamModel(user: "alice", roomStatus: "public", hlsURL: "https://cdn/x.m3u8"))
+        let viewModel = LivePlayerViewModel(user: "alice", service: service)
+
+        await viewModel.connect(host: "h:1", token: "t")
+
+        #expect(viewModel.phase == .playing)
+        let asset = viewModel.playerController?.player.currentItem?.asset as? AVURLAsset
+        #expect(asset?.url.absoluteString == "https://cdn/x.m3u8")
+        viewModel.stop()
+        #expect(viewModel.playerController == nil)
+    }
+
+    @MainActor @Test func notPublicShowsNotLive() async {
+        let viewModel = LivePlayerViewModel(user: "alice", service: FakeWatchlistService())
+        await viewModel.connect(host: "h:1", token: "t")
+        guard case .unavailable(let title, _) = viewModel.phase else {
+            Issue.record("phase = \(viewModel.phase)")
+            return
+        }
+        #expect(title == "alice is not live now")
+        #expect(viewModel.playerController == nil)
+    }
+
+    @MainActor @Test func serverErrorShowsMessage() async {
+        let service = FakeWatchlistService()
+        service.liveResult = .failure(NetworkServiceError.serverError(message: "status API is unavailable"))
+        let viewModel = LivePlayerViewModel(user: "alice", service: service)
+
+        await viewModel.connect(host: "h:1", token: "t")
+
+        #expect(viewModel.phase == .unavailable(title: "Can't play alice's stream", detail: "status API is unavailable"))
+    }
+
+    @MainActor @Test func missingSessionShowsError() async {
+        let viewModel = LivePlayerViewModel(user: "alice", service: FakeWatchlistService())
+        await viewModel.connect(host: nil, token: nil)
+        #expect(viewModel.phase == .unavailable(title: "Can't play alice's stream", detail: "Missing host or token"))
     }
 }

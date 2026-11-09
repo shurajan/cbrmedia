@@ -2,7 +2,8 @@
 //  WatchlistService.swift
 //  CBRPlayer
 //
-//  Список пользователей для слежения и записи: GET/POST /watchlist, DELETE /watchlist/:user.
+//  Список пользователей для слежения и записи: GET/POST /watchlist, DELETE /watchlist/:user,
+//  ссылка на живой стрим: GET /watchlist/:user/live.
 //
 
 import Foundation
@@ -13,6 +14,8 @@ protocol WatchlistServiceProtocol {
     /// Добавляет пользователя или снова включает выключенного.
     func add(user: String, host: String, token: String) async -> Result<Void, Error>
     func remove(user: String, host: String, token: String) async -> Result<Void, Error>
+    /// Свежая ссылка на живой стрим; `.conflict`, если пользователь сейчас не public.
+    func live(user: String, host: String, token: String) async -> Result<LiveStreamModel, Error>
 }
 
 @MainActor
@@ -46,6 +49,22 @@ final class WatchlistService: WatchlistServiceProtocol {
             return .failure(NetworkServiceError.networkError(message: "Invalid user name: \(user)"))
         }
         return await send("DELETE", path: "/watchlist/\(encoded)", host: host, token: token).map { _ in () }
+    }
+
+    func live(user: String, host: String, token: String) async -> Result<LiveStreamModel, Error> {
+        guard let encoded = user.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            return .failure(NetworkServiceError.networkError(message: "Invalid user name: \(user)"))
+        }
+        switch await send("GET", path: "/watchlist/\(encoded)/live", host: host, token: token) {
+        case .success(let data):
+            do {
+                return .success(try JSONDecoder().decode(LiveStreamModel.self, from: data))
+            } catch {
+                return .failure(NetworkServiceError.decodingError(message: "Failed to decode live stream: \(error.localizedDescription)"))
+            }
+        case .failure(let error):
+            return .failure(error)
+        }
     }
 
     // MARK: - Private
@@ -86,6 +105,9 @@ final class WatchlistService: WatchlistServiceProtocol {
             default:
                 let message = (try? JSONDecoder().decode(ErrorResponse.self, from: data))?.error
                     ?? "HTTP \(http.statusCode)"
+                if http.statusCode == 409 {
+                    return .failure(NetworkServiceError.conflict(message: message))
+                }
                 return .failure(NetworkServiceError.serverError(message: message))
             }
         } catch {

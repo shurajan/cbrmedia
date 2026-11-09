@@ -147,7 +147,7 @@ enum Theme {
     /// Текст на primary (6.0).
     static let onPrimary = Color.white
 
-    /// Кнопка play в списке видео (7.4 на фоне, 5.5 на surface).
+    /// Кнопка play в списке видео и у public-строк Watchlist (7.4 на фоне, 5.5 на surface).
     static let play = Palette.green400
     /// Прогресс и бегунок плеера (6.0 на фоне).
     static let playback = Palette.orange400
@@ -159,7 +159,7 @@ enum Theme {
 
     // MARK: Состояния
 
-    /// Идёт запись: статус в списке слежения и сводка на главной (4.6 на surface).
+    /// Идёт запись: статус в списке слежения и сводка на главной (4.6 на surface), точка плашки LIVE в живом плеере.
     static let recording = Palette.red400
     /// Ошибки и предупреждения: текст и значки (9.9 на фоне).
     static let warning = Palette.yellow200
