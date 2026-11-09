@@ -191,14 +191,29 @@ func (s *Store) AddUser(ctx context.Context, user, addedBy string) error {
 	return nil
 }
 
-// RemoveUser удаляет пользователя. Возвращает ErrUserNotFound, если его нет.
+// RemoveUser удаляет пользователя вместе с его состоянием в watch_state: иначе
+// при выключенном recorder повторное добавление выглядело бы уже проверенным
+// (WaitFirstCheck считает признаком проверки строку в watch_state). Возвращает
+// ErrUserNotFound, если пользователя нет.
 func (s *Store) RemoveUser(ctx context.Context, user string) error {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM watchlist WHERE user = ?`, user)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("remove user: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // после Commit откат — no-op
+
+	res, err := tx.ExecContext(ctx, `DELETE FROM watchlist WHERE user = ?`, user)
 	if err != nil {
 		return fmt.Errorf("remove user: %w", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrUserNotFound
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM watch_state WHERE user = ?`, user); err != nil {
+		return fmt.Errorf("remove user state: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("remove user: %w", err)
 	}
 	return nil
 }
@@ -236,14 +251,16 @@ func (s *Store) MarkVerified(ctx context.Context, user string) error {
 }
 
 // DisableUser выключает слежение за пользователем с причиной (пользователь
-// остаётся в списке; AddUser включает его снова).
-func (s *Store) DisableUser(ctx context.Context, user, reason string) error {
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE watchlist SET enabled = 0, disabled_reason = ? WHERE user = ?`, reason, user)
+// остаётся в списке; AddUser включает его снова). Возвращает true, если
+// пользователь был включён; false — уже выключен или его нет.
+func (s *Store) DisableUser(ctx context.Context, user, reason string) (bool, error) {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE watchlist SET enabled = 0, disabled_reason = ? WHERE user = ? AND enabled = 1`, reason, user)
 	if err != nil {
-		return fmt.Errorf("disable user: %w", err)
+		return false, fmt.Errorf("disable user: %w", err)
 	}
-	return nil
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }
 
 // Users возвращает весь список слежения с состоянием, по алфавиту.
@@ -295,7 +312,7 @@ func (s *Store) EnabledUsers(ctx context.Context) ([]string, error) {
 	return users, rows.Err()
 }
 
-// --- watch_state (пишет только recorder) -------------------------------------
+// --- watch_state (пишет recorder; RemoveUser удаляет строку вместе с пользователем) ---
 
 // SetState сохраняет текущее состояние слежения за пользователем.
 func (s *Store) SetState(ctx context.Context, user, roomStatus string, recording bool) error {

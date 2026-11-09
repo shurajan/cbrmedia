@@ -11,6 +11,7 @@ import SwiftUI
 struct WatchlistView: View {
     @EnvironmentObject private var session: SessionStorage
     @EnvironmentObject private var globalSettings: GlobalSettings
+    @Binding var navigationPath: [NavigationDestination]
     @StateObject private var viewModel = WatchlistViewModel()
 
     var body: some View {
@@ -46,10 +47,28 @@ struct WatchlistView: View {
                     .padding()
                 Spacer()
             } else if let error = viewModel.loadError {
-                Text(error)
-                    .foregroundStyle(Theme.warning)
-                    .multilineTextAlignment(.center)
-                    .padding()
+                VStack(spacing: 16) {
+                    Text(error)
+                        .foregroundStyle(Theme.warning)
+                        .multilineTextAlignment(.center)
+                    if viewModel.sessionExpired {
+                        // Как на экране видео: токен отозван — только заново войти.
+                        Button(action: {
+                            session.logout()
+                            navigationPath = []
+                        }) {
+                            Text("Back to Login")
+                                .font(.headline)
+                                .foregroundColor(Theme.onPrimary)
+                                .padding(.vertical, 10)
+                                .padding(.horizontal, 20)
+                                .background(Theme.primary)
+                                .cornerRadius(12)
+                        }
+                    }
+                }
+                .frame(maxWidth: 500)
+                .padding()
                 Spacer()
             } else {
                 list

@@ -44,8 +44,15 @@ func TestWatchlist(t *testing.T) {
 		t.Fatalf("EnabledUsers = %v, %v", users, err)
 	}
 
-	if err := s.DisableUser(ctx, "bob", "HTTP 404"); err != nil {
-		t.Fatal(err)
+	if changed, err := s.DisableUser(ctx, "bob", "HTTP 404"); err != nil || !changed {
+		t.Fatalf("DisableUser = %v, %v; want true, nil", changed, err)
+	}
+	// Повторное выключение ничего не меняет — recorder не повторит событие.
+	if changed, err := s.DisableUser(ctx, "bob", "HTTP 404"); err != nil || changed {
+		t.Fatalf("second DisableUser = %v, %v; want false, nil", changed, err)
+	}
+	if changed, err := s.DisableUser(ctx, "nobody", "HTTP 404"); err != nil || changed {
+		t.Fatalf("DisableUser(unknown) = %v, %v; want false, nil", changed, err)
 	}
 	if users, _ := s.EnabledUsers(ctx); len(users) != 1 || users[0] != "alice" {
 		t.Fatalf("after disable EnabledUsers = %v", users)
@@ -67,11 +74,23 @@ func TestWatchlist(t *testing.T) {
 		t.Fatalf("bob after re-enable = %+v", b)
 	}
 
+	// Удаление уносит и состояние слежения: иначе при выключенном recorder повторное
+	// добавление сразу выглядело бы проверенным.
+	if err := s.SetState(ctx, "bob", "public", true); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.RemoveUser(ctx, "bob"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.RemoveUser(ctx, "bob"); !errors.Is(err, ErrUserNotFound) {
 		t.Fatalf("second remove: err = %v", err)
+	}
+	if err := s.AddUser(ctx, "bob", "api"); err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.WaitFirstCheck(ctx, "bob", 10*time.Millisecond)
+	if err != nil || res.Outcome != CheckPending {
+		t.Fatalf("after remove and re-add: WaitFirstCheck = %+v, %v; want CheckPending", res, err)
 	}
 }
 
@@ -173,7 +192,7 @@ func TestHasUser(t *testing.T) {
 	s, _ := openTest(t)
 	_ = s.AddUser(ctx, "alice", "api")
 	_ = s.AddUser(ctx, "bob", "api")
-	_ = s.DisableUser(ctx, "bob", "HTTP 400")
+	_, _ = s.DisableUser(ctx, "bob", "HTTP 400")
 
 	for user, want := range map[string]bool{"alice": true, "bob": true, "nobody": false} {
 		if got, err := s.HasUser(ctx, user); err != nil || got != want {
@@ -197,7 +216,7 @@ func TestVerified(t *testing.T) {
 		t.Fatal("verified not saved")
 	}
 	// Выключение и повторное включение подтверждение не сбрасывают.
-	_ = s.DisableUser(ctx, "alice", "HTTP 400")
+	_, _ = s.DisableUser(ctx, "alice", "HTTP 400")
 	_ = s.AddUser(ctx, "alice", "api")
 	if ok, _ := s.Verified(ctx, "alice"); !ok {
 		t.Fatal("re-enable reset verified")

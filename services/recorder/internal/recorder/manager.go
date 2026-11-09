@@ -34,7 +34,9 @@ type Sink interface {
 	SetState(ctx context.Context, user, roomStatus string, recording bool) error
 	ClearState(ctx context.Context, user string) error
 	AddEvent(ctx context.Context, kind, user, message string) (int64, error)
-	DisableUser(ctx context.Context, user, reason string) error
+	// DisableUser сообщает, был ли пользователь включён (false — уже выключен).
+	DisableUser(ctx context.Context, user, reason string) (bool, error)
+	// RemoveUser возвращает store.ErrUserNotFound, если пользователя уже нет.
 	RemoveUser(ctx context.Context, user string) error
 	Verified(ctx context.Context, user string) (bool, error)
 	MarkVerified(ctx context.Context, user string) error

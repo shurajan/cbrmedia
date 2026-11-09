@@ -11,7 +11,10 @@ import SwiftUI
 final class VideoListViewModel: ObservableObject {
 
     @Published var videos: [VideoItemModel]     = []
+    /// Ошибка загрузки списка — показывается вместо таблицы с кнопкой возврата ко входу.
     @Published var errorMessage: String?        = nil
+    /// Ошибка удаления — показывается над списком, список остаётся.
+    @Published var actionError: String?         = nil
     @Published var isLoading                    = false
     @Published var filterText                   = ""
     @Published var videoToDelete: VideoItemModel?      = nil
@@ -33,6 +36,7 @@ final class VideoListViewModel: ObservableObject {
 
     func loadVideos(host: String, token: String) async {
         errorMessage = nil
+        actionError  = nil
         isLoading    = true
         defer { isLoading = false }
 
@@ -45,11 +49,12 @@ final class VideoListViewModel: ObservableObject {
     }
 
     func delete(_ file: VideoItemModel, host: String, token: String) async {
+        actionError = nil
         switch await VideoService.shared.deleteFile(name: file.name, host: host, token: token) {
         case .success:
             videos.removeAll { $0 == file }
         case .failure(let error):
-            errorMessage = "Delete failed: \(error.localizedDescription)"
+            actionError = "Delete failed: \(error.localizedDescription)"
         }
     }
 }

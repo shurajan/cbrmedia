@@ -30,6 +30,14 @@ final class FSPlayerController: ObservableObject {
         setupObservers()
     }
 
+    isolated deinit {
+        // Страховка на случай, если cleanup() не вызвали: AVPlayer, освобождённый
+        // с зарегистрированным time observer, бросает NSInternalInconsistencyException.
+        if let timeObserver {
+            player.removeTimeObserver(timeObserver)
+        }
+    }
+
     // MARK: - Playback
 
     func play() {

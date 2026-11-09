@@ -38,7 +38,7 @@ struct FSPlayerView: View {
                             .environmentObject(session)
                             .environmentObject(globalSettings)
                     case .watchlist:
-                        WatchlistView()
+                        WatchlistView(navigationPath: $navigationPath)
                             .environmentObject(session)
                             .environmentObject(globalSettings)
                     }

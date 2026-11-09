@@ -7,9 +7,13 @@
 //
 // Видео собирается во временной скрытой папке media/.convert-<name> (API
 // скрывает папки с точкой) и публикуется атомарным переименованием, поэтому
-// плеер никогда не видит недорезанный плейлист. Исходник удаляется только после
-// публикации. Запись, которую не удалось преобразовать, переносится в
-// recordings/failed/, чтобы не пробовать её снова при каждом проходе.
+// плеер никогда не видит недорезанный плейлист. Исходник удаляется, когда видео
+// во временной папке готово и проверено, но до публикации: тогда падение службы
+// в любой момент не даёт дубликата — на следующем запуске cleanupTemp публикует
+// готовую временную папку, у которой исходника уже нет, а недоделанную или ту,
+// чей исходник ещё на месте, удаляет (запись преобразуется заново). Запись,
+// которую не удалось преобразовать, переносится в recordings/failed/, чтобы не
+// пробовать её снова при каждом проходе.
 package converter
 
 import (
@@ -64,10 +68,11 @@ func (c *Converter) Run(ctx context.Context, interval time.Duration) {
 	}
 }
 
-// RunOnce выполняет один проход: удаляет мусор прерванных запусков и
-// преобразует все завершённые записи. Возвращает число опубликованных видео.
+// RunOnce выполняет один проход: разбирает временные папки прерванных запусков
+// (готовые публикует, остальные удаляет) и преобразует все завершённые записи.
+// Возвращает число опубликованных видео.
 func (c *Converter) RunOnce(ctx context.Context) int {
-	c.cleanupTemp()
+	published := c.cleanupTemp()
 
 	files, err := c.pending(time.Now())
 	if err != nil {
@@ -78,7 +83,6 @@ func (c *Converter) RunOnce(ctx context.Context) int {
 		c.Log.Info("recordings to convert", "count", len(files))
 	}
 
-	published := 0
 	for _, src := range files {
 		if ctx.Err() != nil {
 			break
@@ -160,23 +164,32 @@ func (c *Converter) convert(ctx context.Context, src string) bool {
 		return false
 	}
 
-	dest, err := freeName(c.Media, name, "")
-	if err == nil {
-		err = os.Rename(tmp, dest)
+	// Сначала исходник, потом публикация: см. комментарий к пакету. Если исходник
+	// удалить не удалось, видео всё равно публикуется — при следующем проходе он
+	// даст дубликат с суффиксом, поэтому ошибка важна.
+	if err := os.Remove(src); err != nil {
+		log.Error("remove converted recording", "err", err)
 	}
+	dest, err := c.publish(tmp, name)
 	if err != nil {
 		log.Error("publish video", "err", err)
 		removeAll(log, tmp)
 		return false
 	}
-
-	if err := os.Remove(src); err != nil {
-		// Видео уже в медиатеке; при следующем проходе исходник даст дубликат
-		// с суффиксом, поэтому ошибка важна, но публикацию не отменяет.
-		log.Error("remove converted recording", "err", err)
-	}
 	log.Info("video published", "video", filepath.Base(dest), "took", time.Since(started).Round(time.Second))
 	return true
+}
+
+// publish переносит готовую временную папку в медиатеку под свободным именем.
+func (c *Converter) publish(tmp, name string) (string, error) {
+	dest, err := freeName(c.Media, name, "")
+	if err != nil {
+		return "", err
+	}
+	if err := os.Rename(tmp, dest); err != nil {
+		return "", err
+	}
+	return dest, nil
 }
 
 // remux нарезает src в HLS в папке dir без перекодирования.
@@ -290,17 +303,47 @@ func (c *Converter) moveToFailed(log *slog.Logger, src string) {
 }
 
 // cleanupTemp удаляет временные папки, оставшиеся после прерванного запуска.
-func (c *Converter) cleanupTemp() {
+// cleanupTemp разбирает временные папки, оставшиеся от прерванного запуска:
+// готовое видео (плейлист дописан до конца), исходник которого уже удалён,
+// публикует — служба упала между удалением исходника и публикацией; остальные
+// удаляет: недоделанные, и те, чей исходник на месте, — он будет преобразован
+// заново. Возвращает число опубликованных видео.
+func (c *Converter) cleanupTemp() int {
 	entries, err := os.ReadDir(c.Media)
 	if err != nil {
 		c.Log.Error("scan media", "dir", c.Media, "err", err)
-		return
+		return 0
 	}
+	published := 0
 	for _, e := range entries {
-		if e.IsDir() && strings.HasPrefix(e.Name(), tmpPrefix) {
-			removeAll(c.Log, filepath.Join(c.Media, e.Name()))
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), tmpPrefix) {
+			continue
+		}
+		tmp := filepath.Join(c.Media, e.Name())
+		name := strings.TrimPrefix(e.Name(), tmpPrefix)
+		if c.hasSource(name) || validatePlaylist(filepath.Join(tmp, playlistName)) != nil {
+			removeAll(c.Log, tmp)
+			continue
+		}
+		dest, err := c.publish(tmp, name)
+		if err != nil {
+			c.Log.Error("publish video left by an interrupted run", "path", tmp, "err", err)
+			continue
+		}
+		c.Log.Info("video published (left by an interrupted run)", "video", filepath.Base(dest))
+		published++
+	}
+	return published
+}
+
+// hasSource сообщает, лежит ли в Recordings запись с таким именем (любого формата).
+func (c *Converter) hasSource(name string) bool {
+	for _, ext := range []string{".ts", ".mp4"} {
+		if _, err := os.Lstat(filepath.Join(c.Recordings, name+ext)); err == nil {
+			return true
 		}
 	}
+	return false
 }
 
 func removeAll(log *slog.Logger, path string) {

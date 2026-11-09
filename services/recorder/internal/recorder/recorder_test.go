@@ -138,6 +138,9 @@ func (f *fakeSink) SetState(_ context.Context, user, roomStatus string, recordin
 func (f *fakeSink) RemoveUser(_ context.Context, user string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if slices.Contains(f.removed, user) {
+		return store.ErrUserNotFound
+	}
 	f.removed = append(f.removed, user)
 	return nil
 }
@@ -181,11 +184,14 @@ func (f *fakeSink) AddEvent(_ context.Context, kind, user, message string) (int6
 	return int64(len(f.events)), nil
 }
 
-func (f *fakeSink) DisableUser(_ context.Context, user, reason string) error {
+func (f *fakeSink) DisableUser(_ context.Context, user, reason string) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if _, already := f.disabled[user]; already {
+		return false, nil
+	}
 	f.disabled[user] = reason
-	return nil
+	return true, nil
 }
 
 func (f *fakeSink) kinds() []string {

@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -114,6 +115,31 @@ func TestIssueTokenReplacesPrevious(t *testing.T) {
 	}
 	if a.ValidToken("not-the-token") {
 		t.Error("expected a wrong token to be rejected")
+	}
+}
+
+func TestIssueTokenKeepsPreviousWhenSaveFails(t *testing.T) {
+	// Диск недоступен для записи: прежний токен продолжает действовать, иначе
+	// плеер остался бы вообще без рабочего токена.
+	dir := t.TempDir()
+	a := NewService(filepath.Join(dir, "auth.json"))
+	if err := a.SetPassword("pw"); err != nil {
+		t.Fatal(err)
+	}
+	first := mustIssue(t, a)
+
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	if tok, err := a.IssueToken(); err == nil {
+		t.Skipf("write to a read-only dir succeeded (running as root?), token %q", tok)
+	}
+	if !a.ValidToken(first) {
+		t.Error("previous token must stay valid when the new one could not be saved")
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Errorf("temp file left behind: %v", entries)
 	}
 }
 

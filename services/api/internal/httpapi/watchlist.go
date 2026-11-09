@@ -102,6 +102,10 @@ func addToWatchlist(db *store.Store, checkTimeout time.Duration) fiber.Handler {
 		}
 
 		res, err := db.WaitFirstCheck(c.Context(), user, checkTimeout)
+		if c.Context().Err() != nil {
+			// Служба останавливается: пользователь уже добавлен, итог проверки покажет список.
+			return jsonError(c, fiber.StatusServiceUnavailable, "server is shutting down")
+		}
 		if err != nil {
 			return jsonError(c, fiber.StatusInternalServerError, err.Error())
 		}

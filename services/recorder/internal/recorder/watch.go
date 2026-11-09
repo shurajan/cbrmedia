@@ -153,26 +153,41 @@ func (m *Manager) markVerified(ctx context.Context, user string) bool {
 	return true
 }
 
+// Событие о выключении/удалении пишется, только если запись в базе действительно
+// изменилась. Sync читает список включённых до того, как слежение выключит
+// пользователя и уберёт себя из m.watchers, и может запустить его заново; второе
+// слежение получит тот же 4xx, но базу уже не изменит — и событие не повторит.
+
 // reject удаляет только что добавленного пользователя, которого status API не знает
 // (404/410 до первого успешного ответа), и сообщает об этом.
 func (m *Manager) reject(ctx context.Context, user string, status int) {
-	m.removeUser(ctx, user)
+	if !m.removeUser(ctx, user) {
+		return
+	}
 	m.event(ctx, store.KindUserRejected, user,
 		fmt.Sprintf("User %s not found (status API returned HTTP %d), not added.", user, status))
 	m.log.Warn("user not found, rejected", "user", user, "status", status)
 }
 
-func (m *Manager) removeUser(ctx context.Context, user string) {
+// removeUser удаляет пользователя из списка; false — его там уже не было.
+func (m *Manager) removeUser(ctx context.Context, user string) bool {
 	sctx, cancel := sinkCtx(ctx)
 	defer cancel()
-	if err := m.sink.RemoveUser(sctx, user); err != nil && !errors.Is(err, store.ErrUserNotFound) {
+	err := m.sink.RemoveUser(sctx, user)
+	switch {
+	case errors.Is(err, store.ErrUserNotFound):
+		return false
+	case err != nil:
 		m.log.Error("remove user failed", "user", user, "err", err)
 	}
+	return true
 }
 
 // remove убирает из списка слежения пользователя, которого нет (404/410 attempts раз подряд), и сообщает об этом.
 func (m *Manager) remove(ctx context.Context, user string, status, attempts int) {
-	m.removeUser(ctx, user)
+	if !m.removeUser(ctx, user) {
+		return
+	}
 	m.event(ctx, store.KindUserRemoved, user,
 		fmt.Sprintf("User %s removed: status API returned HTTP %d (user not found) %d times in a row.", user, status, attempts))
 	m.log.Warn("user removed", "user", user, "status", status)
@@ -184,8 +199,12 @@ func (m *Manager) disable(ctx context.Context, user string, status int) {
 
 	sctx, cancel := sinkCtx(ctx)
 	defer cancel()
-	if err := m.sink.DisableUser(sctx, user, reason); err != nil {
+	changed, err := m.sink.DisableUser(sctx, user, reason)
+	if err != nil {
 		m.log.Error("disable user failed", "user", user, "err", err)
+	}
+	if !changed && err == nil {
+		return
 	}
 	m.event(ctx, store.KindUserDisabled, user,
 		fmt.Sprintf("User %s disabled: %s. Add it again to resume.", user, reason))

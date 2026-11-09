@@ -40,7 +40,11 @@ final class LivePlayerViewModel: ObservableObject {
             return
         }
         phase = .connecting
-        switch await service.live(user: user, host: host, token: token) {
+        let result = await service.live(user: user, host: host, token: token)
+        // Экран закрыли, пока ждали ответ: плеер создавать не на чем — его некому
+        // будет остановить, и AVPlayer освободится с живым time observer (краш).
+        guard !Task.isCancelled else { return }
+        switch result {
         case .success(let stream):
             start(stream)
         case .failure(NetworkServiceError.conflict):
@@ -52,6 +56,7 @@ final class LivePlayerViewModel: ObservableObject {
 
     func stop() {
         cancellables.removeAll()
+        playerController?.cleanup()
         playerController?.player.pause()
         playerController?.player.replaceCurrentItem(with: nil)
         playerController = nil

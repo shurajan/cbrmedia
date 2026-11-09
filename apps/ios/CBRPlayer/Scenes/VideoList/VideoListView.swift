@@ -85,6 +85,14 @@ private extension VideoListView {
             filterField
                 .padding(.horizontal)
 
+            if let error = viewModel.actionError {
+                Text(error)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.warning)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+            }
+
             List {
                 ForEach(viewModel.filteredFiles, id: \.id) { video in
                     VideoItemView(video: video) { video in

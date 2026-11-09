@@ -39,12 +39,26 @@ type Server struct {
 	app *fiber.App
 	cfg Config
 	log *slog.Logger
+	// baseCtx — контекст Serve: обработчики получают его через c.Context(), чтобы
+	// долгие ожидания (POST /watchlist ждёт recorder до 30 с, запрос к status API)
+	// прерывались остановкой службы. Пишется до запуска слушателя, дальше только читается.
+	baseCtx context.Context
 }
 
 // New создаёт сервер и регистрирует маршруты.
 // live — источник ссылок на живые стримы; nil — живой просмотр выключен (503).
 func New(cfg Config, authSvc *auth.Service, db *store.Store, live LiveFetcher, log *slog.Logger) *Server {
 	app := fiber.New()
+	s := &Server{app: app, cfg: cfg, log: log}
+
+	// В fiber v3 c.Context() по умолчанию — context.Background(): его не отменяет
+	// ни отключение клиента, ни остановка сервера.
+	app.Use(func(c fiber.Ctx) error {
+		if s.baseCtx != nil {
+			c.SetContext(s.baseCtx)
+		}
+		return c.Next()
+	})
 
 	// Запросы (в том числе каждый сегмент видео) логируются только с -debug.
 	if debugEnabled(log) {
@@ -63,7 +77,7 @@ func New(cfg Config, authSvc *auth.Service, db *store.Store, live LiveFetcher, l
 	app.Get("/watchlist/:user/live", liveStream(db, live, log))
 	app.Get("/events", listEvents(db))
 
-	return &Server{app: app, cfg: cfg, log: log}
+	return s
 }
 
 // Run слушает cfg.Addr до отмены ctx, затем корректно останавливает сервер.
@@ -77,6 +91,7 @@ func (s *Server) Run(ctx context.Context) error {
 
 // Serve обслуживает запросы на ln до отмены ctx.
 func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
+	s.baseCtx = ctx
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- s.app.Listener(ln, fiber.ListenConfig{DisableStartupMessage: true})

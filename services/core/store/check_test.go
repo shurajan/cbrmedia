@@ -16,7 +16,7 @@ func TestWaitFirstCheck(t *testing.T) {
 	}
 	_ = s.SetState(ctx, "blocked", RoomBlocked, false)
 	_ = s.SetState(ctx, "notfound", RoomNotFound, false)
-	_ = s.DisableUser(ctx, "disabled", "status API returned HTTP 400")
+	_, _ = s.DisableUser(ctx, "disabled", "status API returned HTTP 400")
 	_ = s.RemoveUser(ctx, "rejected")
 
 	// recorder проверяет «watching» уже во время ожидания.

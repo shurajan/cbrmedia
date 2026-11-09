@@ -666,9 +666,14 @@ func TestRecordSkipsSegmentAfterRepeatedFailures(t *testing.T) {
 
 func TestSegmentKey(t *testing.T) {
 	cases := map[string]string{
-		"https://cdn/a/s1.ts":               "https://cdn/a/s1.ts",
-		"https://cdn/a/s1.ts?token=abc&e=1": "https://cdn/a/s1.ts",
-		"https://cdn/a/s1.ts#frag":          "https://cdn/a/s1.ts",
+		"https://cdn/a/s1.ts":               "/a/s1.ts",
+		"https://cdn/a/s1.ts?token=abc&e=1": "/a/s1.ts",
+		"https://cdn/a/s1.ts#frag":          "/a/s1.ts",
+		// Другой edge-сервер того же CDN — тот же сегмент.
+		"https://edge4-ams.cdn/a/s1.ts?session=x": "/a/s1.ts",
+		"https://edge1-ams.cdn/a/s1.ts?session=y": "/a/s1.ts",
+		// Относительная ссылка (плейлист без базового URL).
+		"a/s1.ts?token=abc": "a/s1.ts",
 	}
 	for uri, want := range cases {
 		if got := SegmentKey(uri); got != want {
@@ -723,6 +728,36 @@ func TestRecordStalePlaylistIsNotRecorded(t *testing.T) {
 	}
 }
 
+func TestRecordStalePlaylistOnAnotherEdgeIsNotRecorded(t *testing.T) {
+	// hls_source каждый раз ведёт на другой edge-сервер: ключ прошлой записи получен
+	// с одного хоста, плейлист читается с другого — сегменты всё равно те же.
+	srv := fakeStream(t)
+	dir := t.TempDir()
+	r := &Recorder{Client: srv.Client(), Dir: dir, Log: discard}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	opts := Options{After: SegmentKey("https://edge9-other.cdn/s6.ts?session=old"), OnStart: func() { t.Error("OnStart called for a stale playlist") }}
+	if _, err := r.Record(ctx, srv.URL+"/master.m3u8", "edge", FormatTS, opts); !errors.Is(err, ErrNoNewSegments) {
+		t.Fatalf("Record returned %v, want ErrNoNewSegments", err)
+	}
+	if files := listDir(t, dir); len(files) != 0 {
+		t.Errorf("files created for a stale playlist: %v", files)
+	}
+}
+
+func TestRecordCancelledWhileResolvingIsNotAnError(t *testing.T) {
+	// Остановка службы во время загрузки мастер-плейлиста — не ошибка записи.
+	srv := fakeStream(t)
+	r := &Recorder{Client: srv.Client(), Dir: t.TempDir(), Log: discard}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := r.Record(ctx, srv.URL+"/master.m3u8", "cancelled", FormatTS, Options{}); err != nil {
+		t.Fatalf("Record returned %v, want nil for a cancelled context", err)
+	}
+}
+
 func TestRecordAfterUnknownSegmentRecordsAll(t *testing.T) {
 	// Прошлая запись оборвалась давно, её последнего сегмента в окне уже нет: пишется всё.
 	srv := fakeStream(t)
@@ -772,7 +807,7 @@ func TestRecordDedupesSegmentsByPath(t *testing.T) {
 	if got, _ := os.ReadFile(filepath.Join(dir, "dedupe_part1.ts")); string(got) != "ONE" {
 		t.Errorf("recording = %q, want the segment once", got)
 	}
-	if want := srv.URL + "/s1.ts"; res.Last != want {
-		t.Errorf("Last = %q, want %q (without query)", res.Last, want)
+	if want := "/s1.ts"; res.Last != want {
+		t.Errorf("Last = %q, want %q (path only, without host and query)", res.Last, want)
 	}
 }

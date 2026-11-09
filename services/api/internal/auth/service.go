@@ -53,13 +53,23 @@ func (s *Service) Load() error {
 	return nil
 }
 
-// save записывает данные; вызывающий держит s.mu.
-func (s *Service) save() error {
-	b, err := json.MarshalIndent(s.data, "", "  ")
+// save записывает d в auth.json атомарно (временный файл рядом + rename):
+// сбой посреди записи не оставит файл битым, иначе api не стартует.
+// Вызывающий держит s.mu.
+func (s *Service) save(d data) error {
+	b, err := json.MarshalIndent(d, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, b, 0o600)
+	tmp := s.path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, s.path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // SetPassword сохраняет хэш нового пароля и сбрасывает выданный токен.
@@ -71,8 +81,12 @@ func (s *Service) SetPassword(password string) error {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.data = data{PasswordHash: string(hash)}
-	return s.save()
+	d := data{PasswordHash: string(hash)}
+	if err := s.save(d); err != nil {
+		return err
+	}
+	s.data = d
+	return nil
 }
 
 // CheckPassword сравнивает пароль с сохранённым хэшем.
@@ -84,16 +98,20 @@ func (s *Service) CheckPassword(password string) bool {
 }
 
 // IssueToken выдаёт новый токен (предыдущий перестаёт действовать) и сохраняет его.
+// Пока новый токен не записан на диск, действует прежний: иначе ошибка записи
+// (диск полон) оставила бы плеер без единого рабочего токена.
 func (s *Service) IssueToken() (string, error) {
 	token := uuid.NewString()
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.data.Token = token
-	s.data.LastAuthTime = time.Now()
-	if err := s.save(); err != nil {
+	d := s.data
+	d.Token = token
+	d.LastAuthTime = time.Now()
+	if err := s.save(d); err != nil {
 		return "", fmt.Errorf("save token: %w", err)
 	}
+	s.data = d
 	return token, nil
 }
 

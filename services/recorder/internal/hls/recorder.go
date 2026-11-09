@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -161,9 +162,15 @@ type Result struct {
 }
 
 // SegmentKey — идентификатор сегмента между перезагрузками плейлиста и между
-// записями: URL без query и fragment, чтобы смена CDN-токена в параметрах не
-// делала уже записанный сегмент «новым».
+// записями: только путь URL, без хоста, query и fragment. CDN-токен живёт в
+// query, а хост edge-сервера у одного стрима меняется от запроса к запросу
+// (hls_source каждый раз ведёт на другой edge); ни то ни другое не должно
+// делать уже записанный сегмент «новым». Относительная ссылка остаётся как есть
+// без query/fragment.
 func SegmentKey(uri string) string {
+	if u, err := url.Parse(uri); err == nil && u.Host != "" {
+		return u.Path
+	}
 	if i := strings.IndexAny(uri, "?#"); i >= 0 {
 		return uri[:i]
 	}
@@ -180,6 +187,9 @@ func (r *Recorder) Record(ctx context.Context, masterURL, baseName string, f For
 
 	mediaURL, v, err := resolveMediaPlaylist(ctx, r.Client, masterURL)
 	if err != nil {
+		if stopped(ctx, log) {
+			return Result{}, nil
+		}
 		return Result{}, fmt.Errorf("resolving media playlist: %w", err)
 	}
 	if v.uri != "" {

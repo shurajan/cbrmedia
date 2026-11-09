@@ -231,6 +231,40 @@ func TestRunOnceRemovesStaleTempDirs(t *testing.T) {
 	}
 }
 
+const finishedPlaylist = "#EXTM3U\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXTINF:6,\n00000.ts\n#EXT-X-ENDLIST\n"
+
+func TestRunOncePublishesFinishedTempWithoutSource(t *testing.T) {
+	// Служба упала между удалением исходника и публикацией: готовое видео не теряется.
+	e := newEnv(t, fakeFFmpeg(t))
+	writeFile(t, filepath.Join(e.media, tmpPrefix+"rec", playlistName), finishedPlaylist)
+	writeFile(t, filepath.Join(e.media, tmpPrefix+"rec", "00000.ts"), "seg")
+
+	if n := e.conv.RunOnce(context.Background()); n != 1 {
+		t.Fatalf("published = %d, want 1", n)
+	}
+	if got := list(t, e.media); got != "rec/" {
+		t.Errorf("media = %q", got)
+	}
+}
+
+func TestRunOnceDropsFinishedTempWhenSourceRemains(t *testing.T) {
+	// Служба упала после проверки, но до удаления исходника: временная папка
+	// удаляется, запись преобразуется заново — без дубликата rec_2.
+	e := newEnv(t, fakeFFmpeg(t))
+	writeFile(t, filepath.Join(e.media, tmpPrefix+"rec", playlistName), finishedPlaylist)
+	writeFile(t, filepath.Join(e.recordings, "rec.ts"), "raw")
+
+	if n := e.conv.RunOnce(context.Background()); n != 1 {
+		t.Fatalf("published = %d, want 1", n)
+	}
+	if got := list(t, e.media); got != "rec/" {
+		t.Errorf("media = %q, want a single video", got)
+	}
+	if got := list(t, e.recordings); got != "" {
+		t.Errorf("recordings = %q, want empty", got)
+	}
+}
+
 func TestTailBuffer(t *testing.T) {
 	b := &tailBuffer{limit: 5}
 	_, _ = b.Write([]byte("hello "))

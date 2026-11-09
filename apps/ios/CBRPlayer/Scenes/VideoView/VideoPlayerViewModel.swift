@@ -111,6 +111,9 @@ final class VideoPlayerViewModel: ObservableObject {
 
     // MARK: – Public controls
     func cleanup() {
+        // Позицию — до остановки: KVO `.paused` приходит асинхронно, а подписки ниже
+        // уже отменены, так что при закрытии крестиком она иначе не сохранилась бы.
+        saveCurrentPosition()
         player?.pause()
         cancellables.forEach { $0.cancel() }
         cancellables.removeAll()

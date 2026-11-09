@@ -14,6 +14,9 @@ final class WatchlistViewModel: ObservableObject {
     @Published var entries: [WatchEntryModel] = []
     /// Ошибка загрузки списка — показывается вместо таблицы.
     @Published var loadError: String?
+    /// Сервер ответил 401: токен отозван входом с другого устройства. Опрос
+    /// останавливается, экран предлагает войти заново.
+    @Published private(set) var sessionExpired = false
     /// Ошибка добавления/удаления — показывается под полем ввода.
     @Published var actionError: String?
     @Published var isLoading = false
@@ -77,6 +80,11 @@ final class WatchlistViewModel: ObservableObject {
             if fetched != entries { entries = fetched }
             if loadError != nil { loadError = nil }
         case .failure(let error):
+            if case NetworkServiceError.invalidToken = error {
+                sessionExpired = true
+                loadError = error.localizedDescription
+                return
+            }
             // Сбой фонового обновления не прячет уже показанный список.
             if !silent || entries.isEmpty {
                 loadError = error.localizedDescription
@@ -84,9 +92,10 @@ final class WatchlistViewModel: ObservableObject {
         }
     }
 
-    /// Обновляет статусы каждые `pollInterval`, пока задача не отменена (экран закрыт).
+    /// Обновляет статусы каждые `pollInterval`, пока задача не отменена (экран закрыт)
+    /// или токен не отозван.
     func poll(host: String, token: String) async {
-        while !Task.isCancelled {
+        while !Task.isCancelled && !sessionExpired {
             guard (try? await Task.sleep(for: Self.pollInterval)) != nil else { return }
             await load(host: host, token: token, silent: true)
         }

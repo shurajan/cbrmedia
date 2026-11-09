@@ -8,6 +8,8 @@ import Testing
 final class FakeWatchlistService: WatchlistServiceProtocol {
     var entries: [WatchEntryModel] = []
     var failNext: String?
+    /// Конкретная ошибка следующего запроса (например, 401); приоритетнее `failNext`.
+    var nextError: NetworkServiceError?
     private(set) var added: [String] = []
     private(set) var removed: [String] = []
     /// Вызывается во время add — имитирует действия пользователя, пока сервер ждёт проверку.
@@ -15,8 +17,8 @@ final class FakeWatchlistService: WatchlistServiceProtocol {
     weak var viewModel: WatchlistViewModel?
 
     private func failure() -> NetworkServiceError? {
-        defer { failNext = nil }
-        return failNext.map { NetworkServiceError.serverError(message: $0) }
+        defer { failNext = nil; nextError = nil }
+        return nextError ?? failNext.map { NetworkServiceError.serverError(message: $0) }
     }
 
     func fetch(host: String, token: String) async -> Result<[WatchEntryModel], Error> {
@@ -201,6 +203,24 @@ struct WatchlistViewModelTests {
         await vm.enable(vm.entries[0], host: "h", token: "t")
         #expect(service.added == ["bob"])
         #expect(vm.entries.first?.enabled == true)
+    }
+
+    @Test func revokedTokenStopsPollingAndAsksToLogin() async {
+        // Вход с другого iPad отозвал токен: 401 даже при фоновом обновлении — сессия
+        // истекла, опрос прекращается, список уступает место ошибке и кнопке входа.
+        let service = FakeWatchlistService()
+        service.entries = [.make("alice")]
+        let viewModel = WatchlistViewModel(service: service)
+        await viewModel.load(host: "h:1", token: "t")
+        #expect(viewModel.entries.count == 1)
+
+        service.nextError = .invalidToken(message: "Authorization failed: Invalid or expired token")
+        await viewModel.load(host: "h:1", token: "t", silent: true)
+
+        #expect(viewModel.sessionExpired)
+        #expect(viewModel.loadError == "Authorization failed: Invalid or expired token")
+        // poll возвращается сразу, не дожидаясь pollInterval.
+        await viewModel.poll(host: "h:1", token: "t")
     }
 
     @Test func silentReloadFailureKeepsList() async {
