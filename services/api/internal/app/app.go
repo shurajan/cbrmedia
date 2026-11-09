@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"sync"
 
 	"cbr/api/internal/auth"
 	"cbr/api/internal/config"
@@ -16,8 +17,8 @@ import (
 	"cbr/core/store"
 )
 
-// Run обслуживает HTTP API до отмены ctx.
-func Run(ctx context.Context, layout home.Layout, log *slog.Logger) error {
+// Run обслуживает HTTP API до отмены ctx. version — версия сборки (GET /health, heartbeat).
+func Run(ctx context.Context, layout home.Layout, version string, log *slog.Logger) error {
 	cfg, err := config.Load(layout.ConfigFile(config.Name))
 	if err != nil {
 		return err
@@ -53,9 +54,14 @@ func Run(ctx context.Context, layout home.Layout, log *slog.Logger) error {
 		log.Info("live streams are disabled: status_base_url is not set in api.json")
 	}
 
+	var wg sync.WaitGroup
+	wg.Go(func() { db.RunHeartbeat(ctx, store.ServiceAPI, version, store.DefaultHeartbeatInterval, log) })
+	defer wg.Wait()
+
 	server := httpapi.New(httpapi.Config{
 		Addr:     cfg.Addr,
 		MediaDir: layout.Media,
+		Version:  version,
 	}, authSvc, db, live, log)
 	return server.Run(ctx)
 }

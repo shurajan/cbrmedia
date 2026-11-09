@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"cbr/core/media"
 )
 
 // MediaInfo — одно видео медиатеки: папка baseDir/folder с playlist.m3u8.
@@ -42,6 +44,26 @@ func (m *MediaInfo) CreatedAt() string {
 // StreamURL — путь к плейлисту видео в HTTP API; имя папки экранировано.
 func (m *MediaInfo) StreamURL() string {
 	return fmt.Sprintf("/videos/%s/playlist.m3u8", url.PathEscape(m.Folder))
+}
+
+// Meta — метаданные видео: из meta.json, который converter пишет при публикации,
+// а для видео без него (опубликованных раньше) — по плейлисту и ffprobe
+// (Playlist). false — в папке нет playlist.m3u8, это не видео.
+func (m *MediaInfo) Meta() (media.Meta, bool) {
+	playlist := m.Playlist()
+	if playlist == nil {
+		return media.Meta{}, false
+	}
+	if meta, err := media.Read(m.EntryPath); err == nil {
+		return meta, true
+	}
+	return media.Meta{
+		Duration:           playlist.Duration(),
+		Resolution:         playlist.Resolution(),
+		SizeMB:             playlist.SizeMB(),
+		SegmentCount:       playlist.SegmentCount(),
+		AvgSegmentDuration: playlist.AvgSegmentDuration(),
+	}, true
 }
 
 // Playlist возвращает плейлист видео или nil, если playlist.m3u8 нет.

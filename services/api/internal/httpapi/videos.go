@@ -79,8 +79,8 @@ func listVideos(mediaDir string) fiber.Handler {
 			}
 
 			info := library.NewMediaInfo(mediaDir, entry.Name())
-			playlist := info.Playlist()
-			if playlist == nil {
+			meta, ok := info.Meta()
+			if !ok {
 				continue
 			}
 
@@ -89,11 +89,11 @@ func listVideos(mediaDir string) fiber.Handler {
 				Name:               entry.Name(),
 				HLSURL:             info.StreamURL(),
 				CreatedAt:          info.CreatedAt(),
-				Duration:           playlist.Duration(),
-				Resolution:         playlist.Resolution(),
-				SizeMB:             playlist.SizeMB(),
-				SegmentCount:       playlist.SegmentCount(),
-				AvgSegmentDuration: playlist.AvgSegmentDuration(),
+				Duration:           meta.Duration,
+				Resolution:         meta.Resolution,
+				SizeMB:             meta.SizeMB,
+				SegmentCount:       meta.SegmentCount,
+				AvgSegmentDuration: meta.AvgSegmentDuration,
 			})
 		}
 

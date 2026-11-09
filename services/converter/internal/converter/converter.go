@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"cbr/core/ctxutil"
+	"cbr/core/media"
 )
 
 // Значения по умолчанию.
@@ -53,6 +54,7 @@ type Converter struct {
 	Recordings string
 	Media      string
 	FFmpeg     string        // путь к ffmpeg; пусто — "ffmpeg" из PATH
+	FFprobe    string        // путь к ffprobe для разрешения в meta.json; пусто — разрешение не определяется
 	MinAge     time.Duration // не трогать файлы моложе; защита от файлов, которые ещё копируются вручную
 	SegmentSec int           // целевая длительность HLS-сегмента; 0 — DefaultSegmentSec
 	Log        *slog.Logger
@@ -153,6 +155,12 @@ func (c *Converter) convert(ctx context.Context, src string) bool {
 	if err == nil {
 		err = validatePlaylist(filepath.Join(tmp, playlistName))
 	}
+	if err == nil {
+		// meta.json — для GET /videos без разбора плейлиста; без него api посчитает сам.
+		if merr := c.writeMeta(ctx, src, tmp); merr != nil {
+			log.Warn("write meta.json", "err", merr)
+		}
+	}
 	if err != nil {
 		removeAll(log, tmp)
 		if ctx.Err() != nil {
@@ -246,6 +254,47 @@ func ffmpegArgs(src, dir string, segmentSec int) []string {
 		)
 	}
 	return append(args, filepath.Join(dir, playlistName))
+}
+
+// writeMeta считает метаданные готового видео в dir и сохраняет их в meta.json.
+// Разрешение берётся ffprobe'ом из исходника src (он цельный, в отличие от
+// сегментов fMP4); без FFprobe или при его ошибке остаётся пустым.
+func (c *Converter) writeMeta(ctx context.Context, src, dir string) error {
+	m, err := media.Scan(dir)
+	if err != nil {
+		return err
+	}
+	if c.FFprobe != "" {
+		m.Resolution = probeResolution(ctx, c.FFprobe, src)
+	}
+	return media.Write(dir, m)
+}
+
+// probeTimeout — предел одного запуска ffprobe.
+const probeTimeout = 30 * time.Second
+
+// probeResolution возвращает "ШИРИНАxВЫСОТА" первой видеодорожки файла или "".
+func probeResolution(ctx context.Context, ffprobe, path string) string {
+	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, ffprobe,
+		"-v", "error",
+		"-select_streams", "v:0",
+		"-show_entries", "stream=width,height",
+		"-of", "csv=p=0:s=x",
+		path,
+	)
+	cmd.WaitDelay = time.Second
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			return line
+		}
+	}
+	return ""
 }
 
 // validatePlaylist проверяет, что ffmpeg дописал плейлист до конца.

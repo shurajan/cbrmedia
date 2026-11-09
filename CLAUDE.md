@@ -3,7 +3,7 @@
 Личная медиа-платформа: Go-бэкенд записывает живые HLS-стримы и раздаёт их iPad-плееру.
 Язык документации, комментариев и сообщений коммитов — русский.
 
-Текущая версия 1.2.1 (тег `v1.2.1`; исправления — `v1.2.x`, новые функции — `v1.3.0` и далее): функционал и дизайн зафиксированы. Дальше — только исправления ошибок и то, что
+Текущая версия 1.3.0 (тег `v1.3.0`; исправления — `v1.3.x`, новые функции — `v1.4.0` и далее): функционал и дизайн зафиксированы. Дальше — только исправления ошибок и то, что
 владелец попросит явно; поведение, меняющее логику, согласовывать.
 
 | Папка | Что | Детали |
@@ -19,7 +19,8 @@
 tbot (Telegram) / api (iOS) ──пишут──▶ cbr.db: watchlist ──▶ recorder ──опрос status API, HLS──▶ ~/.cbr/recordings
                     ▲                                            │
                     └──── events, watch_state ◀──────────────────┘
-converter (ffmpeg -c copy, каждые 5 мин; в dev.sh — 1 мин): recordings ──▶ ~/.cbr/media/<имя>/playlist.m3u8
+converter (ffmpeg -c copy, каждые 5 мин; в dev.sh — 1 мин): recordings ──▶ ~/.cbr/media/<имя>/playlist.m3u8 + meta.json
+все службы ──heartbeat──▶ cbr.db: services ──▶ api GET /health; api/tbot без живого recorder отвечают на добавление сразу
 CBRPlayer ──HTTP :8000 (Bearer)──▶ api ──▶ ~/.cbr/media
 CBRPlayer ──GET /watchlist/:user/live──▶ api ──status API──▶ hls_source ──▶ CBRPlayer играет прямо с CDN
 ```
@@ -28,18 +29,23 @@ CBRPlayer ──GET /watchlist/:user/live──▶ api ──status API──▶
 
 - `POST /auth {"password"}` → `{"token"}` (один действующий токен; новый логин инвалидирует старый)
 - `GET /videos` → `[{id, name, hlsURL, createdAt?, duration, resolution?, sizeMB?, segmentCount, avgSegmentDuration}]`
-  — Go: `services/api/internal/httpapi/videos.go` `MediaFile`; Swift: `Models/VideoItemModel.swift`
+  — Go: `services/api/internal/httpapi/videos.go` `MediaFile`; Swift: `Models/VideoItemModel.swift`. Метаданные — из
+  `media/<имя>/meta.json` (Go `core/media.Meta`, пишет converter при публикации), для старых видео без него — по плейлисту и ffprobe
 - `GET /videos/:name/*` — файлы HLS; `DELETE /videos/:name`
 - `GET/POST /watchlist`, `DELETE /watchlist/:user` — экран «Watchlist» в iOS (открывается плиткой с главной)
   (Go `WatchEntry` в `watchlist.go` ↔ Swift `Models/WatchEntryModel.swift`). `POST` и `/add` в tbot принимают имя
   или ссылку на страницу, сохраняется только имя в нижнем регистре (`DELETE` и `/del` тоже приводят имя к нижнему) (Go `store.UserFromInput` ↔ Swift `WatchlistViewModel.userName(from:)`).
-  Ответ на добавление — после первой проверки recorder'ом (5–8 с): 404, если пользователя нет.
+  Ответ на добавление — после первой проверки recorder'ом (5–8 с): 404, если пользователя нет; 201 `{user, check, …}`
+  (Go `checkNames` ↔ Swift `Models/WatchAddResultModel.swift`), `check: "recorder_offline"` — recorder не запущен
+  (нет heartbeat), ответ сразу, iOS показывает уведомление под полем.
   `roomStatus` `blocked` / `not found` (Go `store.Room*`) ↔ Swift `WatchEntryModel.Status.blocked/.notFound`
 - `GET /watchlist/:user/live` → `{user, roomStatus, hlsURL}` — свежая ссылка на живой стрим (api спрашивает status API;
   нужен `status_base_url` в `api.json`); 409, если не `public` (Go `LiveStream` в `live.go` ↔ Swift `Models/LiveStreamModel.swift`,
   409 → `NetworkServiceError.conflict`). Плеер открывает `hlsURL` напрямую на CDN, без Bearer. Кнопка play в Watchlist —
   у `roomStatus == "public"` (Go `roomPublic` ↔ Swift `WatchEntryModel.isLive`)
 - `GET /events?after=` — пока не используется клиентами; полная таблица — `services/api/README.md`
+- `GET /health` → `{version, services: [{name, version, alive, seenAt, interval}]}` — heartbeat всех служб из общей базы
+  (Go `Health` в `health.go`); клиентами пока не используется — для диагностики с любого устройства в сети
 - Всё, кроме `/auth`, требует `Authorization: Bearer <token>`. Транспорт — plain HTTP (`http://host:port`).
 
 ## Запуск

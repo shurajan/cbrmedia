@@ -19,6 +19,8 @@ final class WatchlistViewModel: ObservableObject {
     @Published private(set) var sessionExpired = false
     /// Ошибка добавления/удаления — показывается под полем ввода.
     @Published var actionError: String?
+    /// Уведомление после добавления (recorder не запущен) — под полем ввода, цветом `info`.
+    @Published var actionNotice: String?
     @Published var isLoading = false
     @Published var isSubmitting = false
     @Published var newUser = ""
@@ -107,39 +109,50 @@ final class WatchlistViewModel: ObservableObject {
         checkingUser = user
         defer { checkingUser = nil }
         // Ответ приходит через 5–8 с; если за это время в поле начали вводить другое — не стираем.
-        if await submit({ await self.service.add(user: user, host: host, token: token) }, host: host, token: token),
-           newUser == input {
-            newUser = ""
+        if let result = await submit({ await self.service.add(user: user, host: host, token: token) }, host: host, token: token) {
+            noteRecorderOffline(result)
+            if newUser == input { newUser = "" }
         }
     }
 
     /// Снова включает пользователя, выключенного recorder'ом (status API ответил 4xx).
     func enable(_ entry: WatchEntryModel, host: String, token: String) async {
-        _ = await submit({ await self.service.add(user: entry.user, host: host, token: token) }, host: host, token: token)
+        if let result = await submit({ await self.service.add(user: entry.user, host: host, token: token) }, host: host, token: token) {
+            noteRecorderOffline(result)
+        }
     }
 
     func delete(_ entry: WatchEntryModel, host: String, token: String) async {
-        if await submit({ await self.service.remove(user: entry.user, host: host, token: token) }, host: host, token: token) {
+        if await submit({ await self.service.remove(user: entry.user, host: host, token: token) }, host: host, token: token) != nil {
             entries.removeAll { $0.user == entry.user }
+        }
+    }
+
+    /// Сервер ответил сразу, не дожидаясь проверки: recorder не запущен. Пользователь
+    /// в списке, статус «Waiting for recorder», проверка пройдёт при запуске recorder'а.
+    private func noteRecorderOffline(_ result: WatchAddResultModel) {
+        if result.isRecorderOffline {
+            actionNotice = "Recorder is not running: \(result.user) will be checked when it starts."
         }
     }
 
     /// Выполняет действие и перечитывает список — и при ошибке: пока сервер ждал проверку
     /// recorder'ом, фоновое обновление могло показать отклонённого пользователя.
-    /// Возвращает true при успехе.
-    private func submit(_ action: () async -> Result<Void, Error>, host: String, token: String) async -> Bool {
+    /// Возвращает ответ сервера при успехе, nil при ошибке.
+    private func submit<T>(_ action: () async -> Result<T, Error>, host: String, token: String) async -> T? {
         actionError = nil
+        actionNotice = nil
         isSubmitting = true
         defer { isSubmitting = false }
 
         switch await action() {
-        case .success:
+        case .success(let value):
             await load(host: host, token: token, silent: true)
-            return true
+            return value
         case .failure(let error):
             actionError = error.localizedDescription
             await load(host: host, token: token, silent: true)
-            return false
+            return nil
         }
     }
 }

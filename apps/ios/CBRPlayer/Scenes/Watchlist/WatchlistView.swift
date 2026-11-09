@@ -39,6 +39,12 @@ struct WatchlistView: View {
                     .foregroundStyle(Theme.warning)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal)
+            } else if let notice = viewModel.actionNotice {
+                Text(notice)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.info)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
             }
 
             if viewModel.isLoading && viewModel.entries.isEmpty {
@@ -78,7 +84,10 @@ struct WatchlistView: View {
         .navigationTitle("Watchlist")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { refreshButton }
-        .onChange(of: viewModel.newUser) { viewModel.actionError = nil }
+        .onChange(of: viewModel.newUser) {
+            viewModel.actionError = nil
+            viewModel.actionNotice = nil
+        }
         .alert("Remove from Watchlist?", isPresented: $viewModel.showDeleteConfirmation, presenting: viewModel.entryToDelete) { entry in
             Button("Remove", role: .destructive) {
                 Task { await withSession { host, token in await viewModel.delete(entry, host: host, token: token) } }

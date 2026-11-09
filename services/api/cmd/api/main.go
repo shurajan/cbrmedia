@@ -60,7 +60,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	defer stop()
 
 	log.Info("starting api", "version", version, "home", layout.Root)
-	if err := app.Run(ctx, layout, log); err != nil {
+	if err := app.Run(ctx, layout, version, log); err != nil {
 		log.Error("api stopped with error", "err", err)
 		return 1
 	}

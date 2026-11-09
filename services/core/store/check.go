@@ -15,12 +15,13 @@ type CheckOutcome int
 
 // Значения CheckOutcome.
 const (
-	CheckPending  CheckOutcome = iota // recorder ещё не проверил (не запущен, занят или status API недоступен)
-	CheckWatching                     // пользователь найден, слежение идёт
-	CheckBlocked                      // доступ запрещён (RoomBlocked), проверка раз в сутки
-	CheckNotFound                     // не найден (RoomNotFound) — только у ранее подтверждённых
-	CheckDisabled                     // recorder выключил пользователя (прочие 4xx)
-	CheckRejected                     // не найден при первой проверке — recorder удалил его из списка
+	CheckPending    CheckOutcome = iota // recorder ещё не проверил (не запущен, занят или status API недоступен)
+	CheckWatching                       // пользователь найден, слежение идёт
+	CheckBlocked                        // доступ запрещён (RoomBlocked), проверка раз в сутки
+	CheckNotFound                       // не найден (RoomNotFound) — только у ранее подтверждённых
+	CheckDisabled                       // recorder выключил пользователя (прочие 4xx)
+	CheckRejected                       // не найден при первой проверке — recorder удалил его из списка
+	CheckNoRecorder                     // recorder не запущен (нет живого heartbeat): проверит, когда запустится
 )
 
 // CheckResult — итог первой проверки.
@@ -41,8 +42,17 @@ const (
 // WaitFirstCheck ждёт, пока recorder впервые проверит только что добавленного
 // (или снова включённого) пользователя, но не дольше timeout. По истечении
 // возвращает CheckPending. Признак проверки — запись в watch_state, выключение
-// или удаление пользователя recorder'ом.
+// или удаление пользователя recorder'ом. Если у recorder нет живого heartbeat
+// (ServiceAlive), ждать нечего: сразу CheckNoRecorder.
 func (s *Store) WaitFirstCheck(ctx context.Context, user string, timeout time.Duration) (CheckResult, error) {
+	alive, err := s.ServiceAlive(ctx, ServiceRecorder)
+	if err != nil {
+		return CheckResult{}, err
+	}
+	if !alive {
+		return CheckResult{Outcome: CheckNoRecorder}, nil
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	for {

@@ -281,6 +281,8 @@ func addReply(user string, res store.CheckResult) string {
 		return fmt.Sprintf("User %s added: not found, checking daily.", user)
 	case store.CheckDisabled:
 		return fmt.Sprintf("User %s added but disabled: %s", user, res.Reason)
+	case store.CheckNoRecorder:
+		return fmt.Sprintf("User %s added, but recorder is not running: it will be checked when recorder starts.", user)
 	default:
 		return fmt.Sprintf("User %s added, recorder has not checked it yet.", user)
 	}

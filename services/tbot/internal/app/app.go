@@ -23,6 +23,7 @@ const DefaultEventsInterval = 3 * time.Second
 type Options struct {
 	EventsInterval time.Duration // 0 — DefaultEventsInterval
 	BotOptions     []bot.Option  // дополнительные опции go-telegram/bot (тесты)
+	Version        string        // версия сборки для heartbeat в базе
 }
 
 // Run работает до отмены ctx. Возвращает ошибку только если не смог стартовать.
@@ -55,6 +56,7 @@ func Run(ctx context.Context, layout home.Layout, opts Options, log *slog.Logger
 	var wg sync.WaitGroup
 	wg.Go(func() { b.Run(ctx) })
 	wg.Go(func() { b.ForwardEvents(ctx, interval) })
+	wg.Go(func() { db.RunHeartbeat(ctx, store.ServiceTbot, opts.Version, store.DefaultHeartbeatInterval, log) })
 	log.Info("tbot started", "home", layout.Root)
 	wg.Wait()
 	log.Info("tbot stopped")

@@ -5,11 +5,15 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 )
+
+func discardLog() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 
 func openTest(t *testing.T) (*Store, string) {
 	t.Helper()
@@ -86,6 +90,10 @@ func TestWatchlist(t *testing.T) {
 		t.Fatalf("second remove: err = %v", err)
 	}
 	if err := s.AddUser(ctx, "bob", "api"); err != nil {
+		t.Fatal(err)
+	}
+	// recorder жив, но bob ещё не проверен: состояния у него нет.
+	if err := s.Heartbeat(ctx, ServiceRecorder, "test", time.Minute); err != nil {
 		t.Fatal(err)
 	}
 	res, err := s.WaitFirstCheck(ctx, "bob", 10*time.Millisecond)
@@ -299,5 +307,86 @@ func TestMigrationLowercasesUsers(t *testing.T) {
 	}
 	if entries[2].StateAt.IsZero() {
 		t.Error("carol's state must be kept")
+	}
+}
+
+func TestHeartbeat(t *testing.T) {
+	ctx := context.Background()
+	s, _ := openTest(t)
+
+	if alive, err := s.ServiceAlive(ctx, ServiceRecorder); err != nil || alive {
+		t.Fatalf("ServiceAlive(no row) = %v, %v; want false", alive, err)
+	}
+	if err := s.Heartbeat(ctx, ServiceRecorder, "1.3.0", 3*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Heartbeat(ctx, ServiceConverter, "1.3.0", 30*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if alive, err := s.ServiceAlive(ctx, ServiceRecorder); err != nil || !alive {
+		t.Fatalf("ServiceAlive(fresh) = %v, %v; want true", alive, err)
+	}
+
+	states, err := s.Services(ctx)
+	if err != nil || len(states) != 2 {
+		t.Fatalf("Services = %+v, %v", states, err)
+	}
+	if states[0].Name != ServiceConverter || states[0].Version != "1.3.0" || states[0].Interval != 30*time.Second {
+		t.Errorf("converter state = %+v", states[0])
+	}
+	now := time.Now()
+	if !states[1].Alive(now) {
+		t.Error("recorder must be alive right after heartbeat")
+	}
+	// Один пропущенный такт — ещё жив, три — нет.
+	if !states[1].Alive(now.Add(2 * 3 * time.Second)) {
+		t.Error("recorder must survive one missed beat")
+	}
+	if states[1].Alive(now.Add(4 * 3 * time.Second)) {
+		t.Error("recorder must be dead after aliveFactor intervals")
+	}
+
+	if err := s.ClearHeartbeat(ctx, ServiceRecorder); err != nil {
+		t.Fatal(err)
+	}
+	if alive, _ := s.ServiceAlive(ctx, ServiceRecorder); alive {
+		t.Error("ServiceAlive after ClearHeartbeat = true")
+	}
+}
+
+func TestRunHeartbeatClearsOnStop(t *testing.T) {
+	s, _ := openTest(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		s.RunHeartbeat(ctx, ServiceAPI, "test", 20*time.Millisecond, discardLog())
+		close(done)
+	}()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if alive, _ := s.ServiceAlive(context.Background(), ServiceAPI); alive {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("heartbeat never appeared")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	cancel()
+	<-done
+	if alive, _ := s.ServiceAlive(context.Background(), ServiceAPI); alive {
+		t.Error("heartbeat must be cleared after stop")
+	}
+}
+
+func TestOpenRefusesNewerSchema(t *testing.T) {
+	s, path := openTest(t)
+	if _, err := s.db.Exec(`PRAGMA user_version = 99`); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	_, err := Open(path)
+	if !errors.Is(err, ErrSchemaTooNew) {
+		t.Fatalf("Open(newer schema) err = %v, want ErrSchemaTooNew", err)
 	}
 }

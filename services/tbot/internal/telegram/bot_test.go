@@ -89,7 +89,10 @@ func newTestBot(t *testing.T) (*Bot, *fakeAPI, *store.Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b.checkTimeout = 10 * time.Millisecond // recorder в тестах не запущен
+	b.checkTimeout = 10 * time.Millisecond // recorder в тестах есть только как heartbeat: проверки не дожидаемся
+	if err := db.Heartbeat(context.Background(), store.ServiceRecorder, "test", time.Minute); err != nil {
+		t.Fatal(err)
+	}
 	return b, api, db
 }
 
@@ -145,12 +148,13 @@ func TestAddDelList(t *testing.T) {
 
 func TestAddReply(t *testing.T) {
 	cases := map[string]store.CheckResult{
-		"User u not found, not added.":                   {Outcome: store.CheckRejected},
-		"User u added (offline).":                        {Outcome: store.CheckWatching, RoomStatus: "offline"},
-		"User u added: access denied, checking daily.":   {Outcome: store.CheckBlocked},
-		"User u added: not found, checking daily.":       {Outcome: store.CheckNotFound},
-		"User u added but disabled: HTTP 400":            {Outcome: store.CheckDisabled, Reason: "HTTP 400"},
-		"User u added, recorder has not checked it yet.": {Outcome: store.CheckPending},
+		"User u not found, not added.":                                                        {Outcome: store.CheckRejected},
+		"User u added (offline).":                                                             {Outcome: store.CheckWatching, RoomStatus: "offline"},
+		"User u added: access denied, checking daily.":                                        {Outcome: store.CheckBlocked},
+		"User u added: not found, checking daily.":                                            {Outcome: store.CheckNotFound},
+		"User u added but disabled: HTTP 400":                                                 {Outcome: store.CheckDisabled, Reason: "HTTP 400"},
+		"User u added, recorder has not checked it yet.":                                      {Outcome: store.CheckPending},
+		"User u added, but recorder is not running: it will be checked when recorder starts.": {Outcome: store.CheckNoRecorder},
 	}
 	for want, res := range cases {
 		if got := addReply("u", res); got != want {

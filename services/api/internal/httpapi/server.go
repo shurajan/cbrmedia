@@ -10,6 +10,7 @@
 //	DELETE /watchlist/:user          убрать из слежения          (Bearer)
 //	GET    /watchlist/:user/live     свежая ссылка на живой стрим (Bearer)
 //	GET    /events?after=ID&limit=N  журнал событий recorder     (Bearer)
+//	GET    /health                   версии и heartbeat служб    (Bearer)
 package httpapi
 
 import (
@@ -32,6 +33,7 @@ const shutdownTimeout = 10 * time.Second
 type Config struct {
 	Addr     string // адрес для прослушивания, например ":8000"
 	MediaDir string // папка медиатеки
+	Version  string // версия сборки для GET /health
 }
 
 // Server — HTTP-сервер плеера.
@@ -76,6 +78,7 @@ func New(cfg Config, authSvc *auth.Service, db *store.Store, live LiveFetcher, l
 	app.Delete("/watchlist/:user", removeFromWatchlist(db))
 	app.Get("/watchlist/:user/live", liveStream(db, live, log))
 	app.Get("/events", listEvents(db))
+	app.Get("/health", health(db, cfg.Version))
 
 	return s
 }

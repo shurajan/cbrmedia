@@ -32,6 +32,7 @@ HLS-плеер с сохранением позиции) и «Watchlist» (ко�
 | `Models/VideoItemModel.swift` | DTO `GET /videos` — должен совпадать с Go `MediaFile` в `services/api/internal/httpapi/videos.go` |
 | `Models/WatchEntryModel.swift` | DTO `GET /watchlist` (Go `WatchEntry` в `watchlist.go`) и вычисляемые `status`, `isLive` |
 | `Models/LiveStreamModel.swift` | DTO `GET /watchlist/:user/live` (Go `LiveStream` в `live.go`) |
+| `Models/WatchAddResultModel.swift` | DTO ответа 201 на `POST /watchlist` (Go `checkNames` в `watchlist.go`): `check == "recorder_offline"` → `WatchlistViewModel.actionNotice` («Recorder is not running…», цвет `info`) под полем, пользователь при этом добавлен |
 | `Helpers/Theme.swift` | палитра `Palette` и роли `Theme` (см. ниже), `Color(hex:)`, модификаторы `themedScreenBackground()`, `themedField()` |
 | `Helpers/View+Extension.swift` | оверлей производительности |
 

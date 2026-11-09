@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"cbr/core/media"
 )
 
 func TestSimpleID(t *testing.T) {
@@ -141,5 +143,39 @@ func TestResolutionProbedOncePerVideo(t *testing.T) {
 	(&Playlist{Path: path}).Resolution()
 	if calls != 2 {
 		t.Errorf("ffprobe runs = %d, want 2 after the playlist changed", calls)
+	}
+}
+
+// meta.json от converter избавляет GET /videos от разбора плейлиста и ffprobe.
+func TestMetaPrefersMetaJSON(t *testing.T) {
+	defer func(f func(string) string) { probeResolution = f }(probeResolution)
+	probeResolution = func(string) string { t.Error("ffprobe must not run when meta.json exists"); return "" }
+
+	base := t.TempDir()
+	dir := filepath.Join(base, "video")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeSampleHLS(t, dir)
+	want := media.Meta{Duration: 3600, Resolution: "1920x1080", SizeMB: 2300, SegmentCount: 600, AvgSegmentDuration: 6}
+	if err := media.Write(dir, want); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := NewMediaInfo(base, "video").Meta()
+	if !ok || got != want {
+		t.Errorf("Meta = %+v, %v; want %+v", got, ok, want)
+	}
+
+	// Без meta.json — по плейлисту (два сегмента по 9 с), разрешение через ffprobe.
+	if err := os.Remove(filepath.Join(dir, media.MetaFile)); err != nil {
+		t.Fatal(err)
+	}
+	probeResolution = func(string) string { return "640x480" }
+	got, ok = NewMediaInfo(base, "video").Meta()
+	if !ok || got.Duration != 18 || got.SegmentCount != 2 || got.Resolution != "640x480" {
+		t.Errorf("Meta without meta.json = %+v, %v", got, ok)
+	}
+	if _, ok := NewMediaInfo(base, "missing").Meta(); ok {
+		t.Error("Meta of a folder without playlist must be false")
 	}
 }

@@ -14,6 +14,8 @@ final class FakeWatchlistService: WatchlistServiceProtocol {
     private(set) var removed: [String] = []
     /// Вызывается во время add — имитирует действия пользователя, пока сервер ждёт проверку.
     var onAdd: ((WatchlistViewModel) -> Void)?
+    /// Поле `check` в ответе на add; по умолчанию recorder проверил и следит.
+    var nextCheck = "watching"
     weak var viewModel: WatchlistViewModel?
 
     private func failure() -> NetworkServiceError? {
@@ -26,13 +28,13 @@ final class FakeWatchlistService: WatchlistServiceProtocol {
         return .success(entries)
     }
 
-    func add(user: String, host: String, token: String) async -> Result<Void, Error> {
+    func add(user: String, host: String, token: String) async -> Result<WatchAddResultModel, Error> {
         if let error = failure() { return .failure(error) }
         added.append(user)
         if let viewModel { onAdd?(viewModel) }
         entries.removeAll { $0.user == user }
         entries.append(.make(user))
-        return .success(())
+        return .success(WatchAddResultModel(user: user, check: nextCheck, roomStatus: nil, reason: nil))
     }
 
     func remove(user: String, host: String, token: String) async -> Result<Void, Error> {
@@ -99,6 +101,27 @@ struct WatchlistViewModelTests {
         #expect(vm.newUser.isEmpty)
         #expect(vm.entries.map(\.user) == ["alice"])
         #expect(vm.actionError == nil)
+    }
+
+    @Test func addWithRecorderOfflineShowsNotice() async {
+        let service = FakeWatchlistService()
+        service.nextCheck = WatchAddResultModel.checkRecorderOffline
+        let vm = WatchlistViewModel(service: service)
+        vm.newUser = "alice"
+
+        await vm.addNewUser(host: "h", token: "t")
+
+        // Пользователь добавлен и поле очищено, но под ним — уведомление, а не ошибка.
+        #expect(service.added == ["alice"])
+        #expect(vm.newUser.isEmpty)
+        #expect(vm.actionError == nil)
+        #expect(vm.actionNotice == "Recorder is not running: alice will be checked when it starts.")
+
+        // Следующее успешное действие с живым recorder убирает уведомление.
+        service.nextCheck = "watching"
+        vm.newUser = "bob"
+        await vm.addNewUser(host: "h", token: "t")
+        #expect(vm.actionNotice == nil)
     }
 
     @Test func addFailureKeepsInputAndShowsError() async {

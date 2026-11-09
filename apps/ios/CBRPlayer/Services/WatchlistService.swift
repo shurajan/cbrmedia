@@ -11,8 +11,9 @@ import Foundation
 @MainActor
 protocol WatchlistServiceProtocol {
     func fetch(host: String, token: String) async -> Result<[WatchEntryModel], Error>
-    /// Добавляет пользователя или снова включает выключенного.
-    func add(user: String, host: String, token: String) async -> Result<Void, Error>
+    /// Добавляет пользователя или снова включает выключенного; в ответе — итог первой
+    /// проверки recorder'ом (`WatchAddResultModel`).
+    func add(user: String, host: String, token: String) async -> Result<WatchAddResultModel, Error>
     func remove(user: String, host: String, token: String) async -> Result<Void, Error>
     /// Свежая ссылка на живой стрим; `.conflict`, если пользователь сейчас не public.
     func live(user: String, host: String, token: String) async -> Result<LiveStreamModel, Error>
@@ -37,11 +38,20 @@ final class WatchlistService: WatchlistServiceProtocol {
         }
     }
 
-    func add(user: String, host: String, token: String) async -> Result<Void, Error> {
+    func add(user: String, host: String, token: String) async -> Result<WatchAddResultModel, Error> {
         guard let body = try? JSONEncoder().encode(["user": user]) else {
             return .failure(NetworkServiceError.networkError(message: "Failed to encode request"))
         }
-        return await send("POST", path: "/watchlist", host: host, token: token, body: body).map { _ in () }
+        switch await send("POST", path: "/watchlist", host: host, token: token, body: body) {
+        case .success(let data):
+            do {
+                return .success(try JSONDecoder().decode(WatchAddResultModel.self, from: data))
+            } catch {
+                return .failure(NetworkServiceError.decodingError(message: "Failed to decode add result: \(error.localizedDescription)"))
+            }
+        case .failure(let error):
+            return .failure(error)
+        }
     }
 
     func remove(user: String, host: String, token: String) async -> Result<Void, Error> {

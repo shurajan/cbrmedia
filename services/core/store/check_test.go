@@ -9,6 +9,21 @@ import (
 func TestWaitFirstCheck(t *testing.T) {
 	ctx := context.Background()
 	s, _ := openTest(t)
+	// Без heartbeat recorder'а ждать нечего — ответ сразу.
+	if err := s.AddUser(ctx, "norecorder", "api"); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	if got, err := s.WaitFirstCheck(ctx, "norecorder", 2*time.Second); err != nil || got.Outcome != CheckNoRecorder {
+		t.Fatalf("no recorder: got %+v, %v; want CheckNoRecorder", got, err)
+	}
+	if time.Since(started) > time.Second {
+		t.Fatal("no recorder: must not wait for timeout")
+	}
+	if err := s.Heartbeat(ctx, ServiceRecorder, "test", time.Minute); err != nil {
+		t.Fatal(err)
+	}
+
 	for _, u := range []string{"pending", "watching", "blocked", "notfound", "disabled", "rejected"} {
 		if err := s.AddUser(ctx, u, "api"); err != nil {
 			t.Fatal(err)

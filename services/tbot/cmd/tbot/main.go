@@ -50,7 +50,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	defer stop()
 
 	log.Info("starting tbot", "version", version)
-	if err := app.Run(ctx, layout, app.Options{}, log); err != nil {
+	if err := app.Run(ctx, layout, app.Options{Version: version}, log); err != nil {
 		log.Error("tbot stopped with error", "err", err)
 		return 1
 	}

@@ -24,9 +24,13 @@ func watchlistApp(t *testing.T) (*fiber.App, *store.Store) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
+	// recorder в тестах есть только как heartbeat: проверки не дожидаемся (check = pending).
+	if err := db.Heartbeat(context.Background(), store.ServiceRecorder, "test", time.Minute); err != nil {
+		t.Fatal(err)
+	}
+
 	app := fiber.New()
 	app.Get("/watchlist", listWatchlist(db))
-	// recorder в тестах не запущен: проверки не дожидаемся (check = pending).
 	app.Post("/watchlist", addToWatchlist(db, 10*time.Millisecond))
 	app.Delete("/watchlist/:user", removeFromWatchlist(db))
 	app.Get("/events", listEvents(db))
@@ -107,6 +111,19 @@ func TestAddWaitsForFirstCheck(t *testing.T) {
 	app.Post("/watchlist", addToWatchlist(db, 3*time.Second))
 	ctx := context.Background()
 
+	// Без heartbeat recorder'а ответ сразу: добавлен, но не проверен.
+	start := time.Now()
+	code, body := doTimeout(t, app, `{"user":"carol"}`)
+	if code != http.StatusCreated || !strings.Contains(body, `"check":"recorder_offline"`) {
+		t.Errorf("carol: %d %s", code, body)
+	}
+	if time.Since(start) > time.Second {
+		t.Error("carol: must not wait for the recorder that is not running")
+	}
+	if err := db.Heartbeat(ctx, store.ServiceRecorder, "test", time.Minute); err != nil {
+		t.Fatal(err)
+	}
+
 	// Имитация recorder: ghost не найден и удалён, alice найдена.
 	go func() {
 		time.Sleep(200 * time.Millisecond)
@@ -114,7 +131,7 @@ func TestAddWaitsForFirstCheck(t *testing.T) {
 		_ = db.SetState(ctx, "alice", "offline", false)
 	}()
 
-	code, body := doTimeout(t, app, `{"user":"ghost"}`)
+	code, body = doTimeout(t, app, `{"user":"ghost"}`)
 	if code != http.StatusNotFound || !strings.Contains(body, "User ghost not found, not added") {
 		t.Errorf("ghost: %d %s", code, body)
 	}

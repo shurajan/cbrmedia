@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"cbr/core/home"
@@ -27,6 +28,8 @@ const (
 type Options struct {
 	// SyncInterval — как часто сверяться со списком слежения; 0 — DefaultSyncInterval.
 	SyncInterval time.Duration
+	// Version — версия сборки для heartbeat в базе (store.Heartbeat).
+	Version string
 }
 
 // Run работает до отмены ctx. Возвращает ошибку только если не смог стартовать.
@@ -68,6 +71,12 @@ func Run(ctx context.Context, layout home.Layout, opts Options, log *slog.Logger
 		interval = DefaultSyncInterval
 	}
 	log.Info("recorder started", "home", layout.Root, "sync", interval)
+
+	// Heartbeat раз в такт Sync: по нему api и tbot понимают, ждать ли проверки
+	// (store.WaitFirstCheck → CheckNoRecorder), а GET /health — жив ли recorder.
+	var wg sync.WaitGroup
+	wg.Go(func() { db.RunHeartbeat(ctx, store.ServiceRecorder, opts.Version, interval, log) })
+	defer wg.Wait()
 
 	syncTicker := time.NewTicker(interval)
 	defer syncTicker.Stop()

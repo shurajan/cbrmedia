@@ -7,6 +7,8 @@
 //   - watch_state — что сейчас делает recorder по каждому пользователю.
 //   - events — журнал событий (outbox): recorder пишет, интерфейсы читают,
 //     каждый со своей позиции в cursors.
+//   - services — heartbeat служб: кто запущен, какой версии и когда в последний
+//     раз подавал признаки жизни (см. Heartbeat, RunHeartbeat).
 //
 // Базу одновременно открывают несколько процессов: WAL и busy_timeout
 // позволяют им читать параллельно и по очереди писать.
@@ -93,7 +95,20 @@ var migrations = []string{
 	`UPDATE OR IGNORE watchlist SET user = lower(user) WHERE user <> lower(user);
 	DELETE FROM watchlist WHERE user <> lower(user);
 	DELETE FROM watch_state WHERE user <> lower(user);`,
+	// services — heartbeat служб (см. Heartbeat): interval — обещанный период
+	// обновления в мс, seen_at — последнее обновление.
+	`CREATE TABLE IF NOT EXISTS services (
+		name     TEXT PRIMARY KEY,
+		version  TEXT NOT NULL DEFAULT '',
+		interval INTEGER NOT NULL,
+		seen_at  INTEGER NOT NULL
+	);`,
 }
+
+// ErrSchemaTooNew — база создана более новой версией служб, чем этот бинарник:
+// службы обновляют вместе (install.sh без аргументов), частичный деплой
+// не должен работать молча с незнакомой схемой.
+var ErrSchemaTooNew = errors.New("database schema is newer than this build supports")
 
 // Store — подключение к общей базе. Безопасен для конкурентного использования.
 type Store struct {
@@ -132,6 +147,9 @@ func (s *Store) migrate(ctx context.Context) error {
 	var version int
 	if err := tx.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version); err != nil {
 		return err
+	}
+	if version > len(migrations) {
+		return fmt.Errorf("%w: schema version %d, this build knows %d; update the service", ErrSchemaTooNew, version, len(migrations))
 	}
 	for i := version; i < len(migrations); i++ {
 		if _, err := tx.ExecContext(ctx, migrations[i]); err != nil {

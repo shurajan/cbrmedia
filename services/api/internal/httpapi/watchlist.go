@@ -78,7 +78,8 @@ func listWatchlist(db *store.Store) fiber.Handler {
 //
 // Ответ приходит после первой проверки пользователя recorder'ом (обычно 5–8 с,
 // не дольше checkTimeout): 201 с итогом в "check" или 404, если пользователь не
-// найден и recorder его удалил.
+// найден и recorder его удалил. Без живого recorder (heartbeat) ответ сразу:
+// check = recorder_offline.
 func addToWatchlist(db *store.Store, checkTimeout time.Duration) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		var req struct {
@@ -130,6 +131,8 @@ var checkNames = map[store.CheckOutcome]string{
 	store.CheckBlocked:  "blocked",
 	store.CheckNotFound: "not_found",
 	store.CheckDisabled: "disabled",
+	// recorder не запущен (нет heartbeat): пользователь добавлен, проверит при запуске.
+	store.CheckNoRecorder: "recorder_offline",
 }
 
 // removeFromWatchlist — DELETE /watchlist/:user. Имя приводится к нижнему

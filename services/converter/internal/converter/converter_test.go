@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"cbr/core/media"
 )
 
 var discard = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -154,8 +156,16 @@ func TestConvertPublishesAndRemovesSource(t *testing.T) {
 	if got := list(t, e.media); got != "bob_2026-11-03_10-15_part1/" {
 		t.Fatalf("media = %q", got)
 	}
-	if got := list(t, filepath.Join(e.media, "bob_2026-11-03_10-15_part1")); got != "00000.ts playlist.m3u8" {
+	if got := list(t, filepath.Join(e.media, "bob_2026-11-03_10-15_part1")); got != "00000.ts meta.json playlist.m3u8" {
 		t.Errorf("video dir = %q", got)
+	}
+	// meta.json — по плейлисту фейкового ffmpeg: один сегмент на 6 с; ffprobe не задан — без разрешения.
+	m, err := media.Read(filepath.Join(e.media, "bob_2026-11-03_10-15_part1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (media.Meta{Duration: 6, SegmentCount: 1, AvgSegmentDuration: 6}); m != want {
+		t.Errorf("meta = %+v, want %+v", m, want)
 	}
 }
 
@@ -287,6 +297,7 @@ func TestConvertWithRealFFmpeg(t *testing.T) {
 
 	e := newEnv(t, ffmpeg)
 	e.conv.SegmentSec = 2
+	e.conv.FFprobe, _ = exec.LookPath("ffprobe")
 	gen := func(name string, extra ...string) {
 		args := []string{"-v", "error", "-f", "lavfi", "-i", "testsrc=size=160x120:rate=25",
 			"-f", "lavfi", "-i", "sine", "-t", "7", "-c:v", "libx264", "-g", "25", "-c:a", "aac"}
@@ -336,6 +347,16 @@ func TestConvertWithRealFFmpeg(t *testing.T) {
 			if _, err := os.Stat(filepath.Join(dir, "init.mp4")); err != nil {
 				t.Errorf("%s: init.mp4 missing: %v", video, err)
 			}
+		}
+		m, err := media.Read(dir)
+		if err != nil {
+			t.Fatalf("%s: meta.json: %v", video, err)
+		}
+		if m.SegmentCount != segments || m.Duration < 6 || m.Duration > 8 || m.SizeMB != 0 {
+			t.Errorf("%s: meta = %+v (segments %d)", video, m, segments)
+		}
+		if e.conv.FFprobe != "" && m.Resolution != "160x120" {
+			t.Errorf("%s: resolution = %q, want 160x120", video, m.Resolution)
 		}
 	}
 	check("live_part1", ".ts", false)
