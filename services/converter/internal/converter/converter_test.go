@@ -213,6 +213,31 @@ func TestConvertDoesNotOverwriteExistingVideo(t *testing.T) {
 	}
 }
 
+// Исходник, который не удалось удалить, не даёт ни видео, ни дубликатов на следующих проходах.
+func TestConvertKeepsSourceItCannotRemove(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root удаляет файлы и из папки без права записи")
+	}
+	e := newEnv(t, fakeFFmpeg(t))
+	writeFile(t, filepath.Join(e.recordings, "rec.ts"), "raw")
+	if err := os.Chmod(e.recordings, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(e.recordings, 0o755) })
+
+	for pass := 1; pass <= 2; pass++ {
+		if n := e.conv.RunOnce(context.Background()); n != 0 {
+			t.Fatalf("pass %d: published = %d, want 0", pass, n)
+		}
+		if got := list(t, e.media); got != "" {
+			t.Fatalf("pass %d: media = %q, want empty", pass, got)
+		}
+		if got := list(t, e.recordings); got != "rec.ts" {
+			t.Fatalf("pass %d: recordings = %q", pass, got)
+		}
+	}
+}
+
 func TestConvertFailureMovesSourceToFailed(t *testing.T) {
 	for _, mode := range []string{"fail", "partial"} {
 		t.Run(mode, func(t *testing.T) {

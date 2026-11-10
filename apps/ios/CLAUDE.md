@@ -6,6 +6,7 @@ HLS-плеер с сохранением позиции) и «Watchlist» (ко�
 - Xcode-проект `CBRPlayer.xcodeproj`, схема **CBRPlayer**, только iPad (`TARGETED_DEVICE_FAMILY = 2`), iOS 26.6, Swift 6, bundle `com.bralnin.cbrplayer`.
 - Без внешних SPM-зависимостей. Info.plist генерируется (`GENERATE_INFOPLIST_FILE`, ключи `INFOPLIST_KEY_*` в pbxproj):
   отображаемое имя `cbr` (`CFBundleDisplayName`), категория `public.app-category.video`, всегда тёмная тема (`UIUserInterfaceStyle = Dark`).
+- `MARKETING_VERSION` у всех таргетов = версия проекта из корневого `CLAUDE.md` (сейчас 1.3.1) — менять вместе с ней.
 - Иконка — `Assets.xcassets/AppIcon.appiconset/CBR_AppIcon_1024.png` (один размер 1024, остальные Xcode генерирует).
 - Группы — file-system synchronized (objectVersion 77): новый `.swift` в `CBRPlayer/` попадает в таргет автоматически, pbxproj править не нужно.
 - Сборка из CLI: `xcodebuild -project CBRPlayer.xcodeproj -scheme CBRPlayer -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M5)' build`

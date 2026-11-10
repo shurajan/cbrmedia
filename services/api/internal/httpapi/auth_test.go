@@ -67,6 +67,7 @@ func TestAuthHandlerWrongPassword(t *testing.T) {
 	if resp.StatusCode != fiber.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, fiber.StatusUnauthorized)
 	}
+	assertJSONError(t, resp, "invalid password")
 }
 
 func TestAuthHandlerInvalidJSON(t *testing.T) {
@@ -76,5 +77,23 @@ func TestAuthHandlerInvalidJSON(t *testing.T) {
 
 	if resp.StatusCode != fiber.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, fiber.StatusBadRequest)
+	}
+	assertJSONError(t, resp, "invalid json")
+}
+
+// assertJSONError проверяет тело ошибки {"error": want}: iOS (AuthService) разбирает только его.
+func assertJSONError(t *testing.T, resp *http.Response, want string) {
+	t.Helper()
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Errorf("Content-Type = %q, want application/json", ct)
+	}
+	var body struct {
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.Error != want {
+		t.Errorf("error = %q, want %q", body.Error, want)
 	}
 }

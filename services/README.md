@@ -48,7 +48,7 @@
 ├── config/
 │   ├── recorder.json    # base_url, proxy
 │   ├── tbot.json        # bot_token, allowed_user_id, proxy (chmod 600)
-│   ├── api.json         # addr (необязательно, по умолчанию :8000)
+│   ├── api.json         # addr (по умолчанию :8000), status_base_url, proxy — всё необязательно
 │   └── auth.json        # хэш пароля плеера (api hash-password)
 ├── data/
 │   ├── cbr.db           # общая база (SQLite)
@@ -96,5 +96,6 @@ tail -f ~/.cbr/logs/recorder.log
 
 Скрипт делает `git pull`, собирает бинарники в `~/.cbr/bin/`, перезаписывает unit-файлы `cbr-<служба>.service`
 и запускает службы. Если для службы нет конфига, кладёт шаблон и пропускает её. Ротация логов
-(`/etc/logrotate.d/cbrmedia`): раз в день или больше 100 МБ, 14 архивов, `copytruncate`.
+(`/etc/logrotate.d/cbrmedia`): раз в сутки (`maxsize 100M` проверяется только при этом запуске — файл больше
+100 МБ ротируется на ближайшем, а не сразу), 14 архивов, `copytruncate`.
 Прежние монолитные службы `cbrservice` и `cbrconvert` скрипт останавливает и удаляет.

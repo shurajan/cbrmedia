@@ -8,6 +8,7 @@ cbrmedia/
 │   ├── ios/            # CBRPlayer — iPad-клиент (Swift / SwiftUI, Xcode)
 │   ├── android/        # (планируется)
 │   └── web/            # (планируется)
+├── design/             # эталон дизайна: tokens.json (из Theme.swift), артборды экранов canvas/
 └── services/           # бэкенд (каждый сервис — отдельный Go-модуль)
     ├── core/           # общая библиотека: служебная папка ~/.cbr, база SQLite
     ├── recorder/       # запись стримов
