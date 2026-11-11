@@ -21,6 +21,7 @@ var discard = slog.New(slog.NewTextHandler(io.Discard, nil))
 var fastTiming = timing{
 	initialDelay:   time.Millisecond,
 	restoreStagger: time.Millisecond,
+	techRetry:      5 * time.Millisecond,
 	techFailure:    5 * time.Millisecond,
 	rateLimited:    5 * time.Millisecond,
 	otherFailure:   5 * time.Millisecond,
@@ -628,6 +629,56 @@ func TestRecordRetryDelay(t *testing.T) {
 		if got := defaultTiming.recordRetryDelay(i + 1); got != w {
 			t.Errorf("recordRetryDelay(%d) = %v, want %v", i+1, got, w)
 		}
+	}
+}
+
+func TestTechRetryDelay(t *testing.T) {
+	want := []time.Duration{15 * time.Second, 30 * time.Second, time.Minute, 2 * time.Minute,
+		4 * time.Minute, 8 * time.Minute, 16 * time.Minute, 20 * time.Minute, 20 * time.Minute}
+	for i, w := range want {
+		if got := defaultTiming.techRetryDelay(i + 1); got != w {
+			t.Errorf("techRetryDelay(%d) = %v, want %v", i+1, got, w)
+		}
+	}
+}
+
+// netError — сетевая ошибка status API (статус 0).
+var netError = statusResponse{status: 0, err: errors.New("dial tcp: network is unreachable")}
+
+func TestWatchRetriesSoonAfterNetworkErrorPostRecording(t *testing.T) {
+	// Сеть пропала посреди эфира: запись закончилась, опрос сразу после неё
+	// дважды не прошёл. Новая запись — через techRetry и 2×techRetry, а не через techFailure.
+	live := statusResponse{room: statusapi.Room{Status: "public", HLSURL: "https://cdn/a.m3u8"}, status: 200}
+	status := &fakeStatus{responses: []statusResponse{live, live, netError, netError, live}}
+	rec := &fakeRecorder{}
+	m, _ := newTestManager(status, rec)
+	m.timing.techRetry = 10 * time.Millisecond
+	m.timing.techFailure = time.Hour
+	m.timing.publicDelay = time.Hour
+	m.timing.longRecording = 0 // запись долгая: опрос сразу после неё
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer func() { cancel(); m.Wait() }()
+	m.Sync(ctx, []string{"bob"})
+	waitFor(t, func() bool { return rec.callCount() >= 2 })
+}
+
+func TestWatchResetsTechRetryAfterSuccess(t *testing.T) {
+	// Ошибки чередуются с успешными ответами: каждая пауза — techRetry, без удвоения.
+	// С удвоением 4 паузы заняли бы 50+100+200+400 мс, без него — около 200 мс.
+	ok := statusResponse{room: statusapi.Room{Status: "offline"}, status: 200}
+	live := statusResponse{room: statusapi.Room{Status: "public", HLSURL: "https://cdn/a.m3u8"}, status: 200}
+	status := &fakeStatus{responses: []statusResponse{
+		netError, ok, netError, ok, netError, ok, netError, live,
+	}}
+	rec := &fakeRecorder{}
+	m, _ := newTestManager(status, rec)
+	m.timing.techRetry = 50 * time.Millisecond
+	m.timing.techFailure = time.Hour
+	m.timing.publicDelay = time.Hour
+
+	if n := recordCallsWithin(t, m, rec, 500*time.Millisecond); n < 1 {
+		t.Errorf("Record called %d times in 500ms, want 1: tech retry must reset after a successful response", n)
 	}
 }
 

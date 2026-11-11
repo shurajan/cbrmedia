@@ -10,7 +10,8 @@ import (
 type timing struct {
 	initialDelay   time.Duration // пауза перед первым запросом
 	restoreStagger time.Duration // пауза между восстановлением пользователей при старте
-	techFailure    time.Duration // после 5xx или сетевой ошибки; предел для Retry-After
+	techRetry      time.Duration // после первой 5xx или сетевой ошибки, дальше вдвое больше
+	techFailure    time.Duration // предел паузы после 5xx и сетевых ошибок и для Retry-After
 	rateLimited    time.Duration // после 429 без Retry-After
 	otherFailure   time.Duration // после прочих ошибок (например, некорректный JSON)
 	publicDelay    time.Duration // комната public
@@ -27,6 +28,7 @@ type timing struct {
 var defaultTiming = timing{
 	initialDelay:   5 * time.Second,
 	restoreStagger: 5 * time.Second,
+	techRetry:      15 * time.Second,
 	techFailure:    20 * time.Minute,
 	rateLimited:    2 * time.Minute,
 	otherFailure:   3 * time.Minute,
@@ -66,6 +68,17 @@ func classifyFailure(status int) failureAction {
 		return actionDisable
 	}
 	return actionRetry
+}
+
+// techRetryDelay — пауза после n-й подряд сетевой ошибки или 5xx от status API:
+// techRetry, затем вдвое больше, но не дольше techFailure. Короткий обрыв сети
+// посреди эфира стоит секунды, а не techFailure; долгий сбой — не чаще techFailure.
+func (t timing) techRetryDelay(n int) time.Duration {
+	d := t.techRetry
+	for i := 1; i < n && d < t.techFailure; i++ {
+		d *= 2
+	}
+	return min(d, t.techFailure)
 }
 
 // rateLimitDelay — пауза после 429: Retry-After, но не дольше techFailure; без него — rateLimited.

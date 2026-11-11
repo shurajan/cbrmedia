@@ -30,6 +30,7 @@ func (m *Manager) watch(ctx context.Context, user string, initialDelay time.Dura
 	// Неподтверждённого 404/410 удаляет сразу: такого пользователя, скорее всего, нет вовсе.
 	verified := m.verified(ctx, user)
 	notFound := 0         // ответов 404/410 подряд
+	techFailures := 0     // сетевых ошибок и 5xx подряд
 	failedRecordings := 0 // неудачных попыток записи подряд
 	// lastSegment — ключ последнего записанного сегмента (hls.Options.After):
 	// следующая запись того же стрима продолжается после него, а застывший после
@@ -77,8 +78,10 @@ func (m *Manager) watch(ctx context.Context, user string, initialDelay time.Dura
 					backoff = m.timing.rateLimitDelay(statusapi.RetryAfter(err))
 					log.Warn("rate limited, backing off", "backoff", backoff)
 				case status >= http.StatusInternalServerError || status == 0:
-					backoff = m.timing.techFailure
-					log.Warn("technical failure, backing off", "status", status, "backoff", backoff)
+					techFailures++
+					backoff = m.timing.techRetryDelay(techFailures)
+					log.Warn("technical failure, backing off", "status", status,
+						"attempt", techFailures, "backoff", backoff)
 				default:
 					backoff = m.timing.otherFailure
 				}
@@ -90,6 +93,7 @@ func (m *Manager) watch(ctx context.Context, user string, initialDelay time.Dura
 		}
 
 		notFound = 0
+		techFailures = 0
 		if !verified {
 			verified = m.markVerified(ctx, user)
 		}
