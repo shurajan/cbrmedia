@@ -46,7 +46,7 @@
 ~/.cbr/
 ├── bin/                 # recorder, tbot, api, converter
 ├── config/
-│   ├── recorder.json    # base_url, proxy
+│   ├── recorder.json    # base_url, proxy (status API), cdn {connection: direct|proxy, proxy}
 │   ├── tbot.json        # bot_token, allowed_user_id, proxy (chmod 600)
 │   ├── api.json         # addr (по умолчанию :8000), status_base_url, proxy — всё необязательно
 │   └── auth.json        # хэш пароля плеера (api hash-password)

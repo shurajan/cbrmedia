@@ -126,12 +126,13 @@ func parseRetryAfter(v string, now time.Time) time.Duration {
 	return 0
 }
 
-// NewHTTPClient создаёт HTTP-клиент для опроса status API (и скачивания стримов в recorder).
+// NewHTTPClient создаёт HTTP-клиент для status API или CDN (скачивание стримов в recorder).
+// purpose — назначение клиента для лога ("status API", "CDN"); proxy пуст — прямое подключение.
 //
 // Таймауты покрывают установку соединения и ожидание заголовков, но не чтение
 // тела, поэтому долгие загрузки сегментов не прерываются.
 // Проверка TLS-сертификатов отключена.
-func NewHTTPClient(proxy string, log *slog.Logger) (*http.Client, error) {
+func NewHTTPClient(proxy, purpose string, log *slog.Logger) (*http.Client, error) {
 	transport := &http.Transport{
 		DialContext: (&net.Dialer{
 			Timeout:   15 * time.Second,
@@ -141,16 +142,20 @@ func NewHTTPClient(proxy string, log *slog.Logger) (*http.Client, error) {
 		ResponseHeaderTimeout: 30 * time.Second,
 		IdleConnTimeout:       90 * time.Second,
 		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // осознанно: см. recorder/README.md
+		// Proxy не задан: переменные HTTP(S)_PROXY окружения не действуют, подключение
+		// определяет только конфиг.
 	}
-	log.Warn("TLS verification is DISABLED for status polling and stream downloads")
+	log.Warn("TLS verification is DISABLED", "for", purpose)
 
 	if proxy != "" {
 		proxyURL, err := url.Parse(proxy)
 		if err != nil {
-			return nil, fmt.Errorf("invalid proxy URL %q: %w", proxy, err)
+			return nil, fmt.Errorf("invalid %s proxy URL %q: %w", purpose, proxy, err)
 		}
 		transport.Proxy = http.ProxyURL(proxyURL)
-		log.Info("using proxy for status polling and downloads", "proxy", proxy)
+		log.Info("using proxy", "for", purpose, "proxy", proxy)
+	} else {
+		log.Info("using direct connection", "for", purpose)
 	}
 
 	return &http.Client{Transport: transport}, nil

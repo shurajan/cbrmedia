@@ -39,7 +39,8 @@ HTTP API для плеера CBRPlayer: авторизация по паролю
 - `addr` — адрес, по умолчанию `:8000`;
 - `status_base_url` — базовый адрес status API, тот же, что `base_url` в `recorder.json`; без него
   `GET /watchlist/:user/live` отвечает 503 (живой просмотр выключен), остальное работает;
-- `proxy` — HTTP-прокси для запросов к status API, как в `recorder.json` (необязательно).
+- `proxy` — HTTP-прокси для запросов к status API, как `proxy` в `recorder.json` (необязательно). К CDN api
+  не обращается: `hlsURL` плеер открывает сам.
   Проверка TLS-сертификатов status API отключена, как в recorder.
 
 ## Запуск

@@ -45,7 +45,7 @@ func Run(ctx context.Context, layout home.Layout, version string, log *slog.Logg
 	// Живой просмотр включается, только если в api.json задан status_base_url.
 	var live httpapi.LiveFetcher
 	if cfg.StatusBaseURL != "" {
-		httpClient, err := statusapi.NewHTTPClient(cfg.Proxy, log)
+		httpClient, err := statusapi.NewHTTPClient(cfg.Proxy, "status API", log)
 		if err != nil {
 			return err
 		}

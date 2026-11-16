@@ -50,10 +50,10 @@ func TestStatusClientFetch(t *testing.T) {
 }
 
 func TestNewHTTPClientRejectsBadProxy(t *testing.T) {
-	if _, err := NewHTTPClient("http://[::1", discard); err == nil {
+	if _, err := NewHTTPClient("http://[::1", "test", discard); err == nil {
 		t.Error("expected error for invalid proxy")
 	}
-	if _, err := NewHTTPClient("", discard); err != nil {
+	if _, err := NewHTTPClient("", "test", discard); err != nil {
 		t.Errorf("no proxy: %v", err)
 	}
 }
