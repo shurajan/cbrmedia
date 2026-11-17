@@ -3,7 +3,6 @@ package config
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
 	coreconfig "cbr/core/config"
@@ -12,14 +11,19 @@ import (
 // Name — имя службы и файла конфига.
 const Name = "tbot"
 
+// SectionTelegram — имя секции подключения в tbot.json.
+const SectionTelegram = "telegram"
+
 // Config — содержимое tbot.json.
 type Config struct {
 	// BotToken — токен бота от @BotFather.
 	BotToken string `json:"bot_token"`
 	// AllowedUserID — единственный пользователь Telegram, которому разрешены команды.
 	AllowedUserID int64 `json:"allowed_user_id"`
-	// Proxy — HTTP-прокси для Telegram API (необязательно).
-	Proxy string `json:"proxy"`
+	// Telegram — подключение к Telegram API.
+	Telegram coreconfig.Connection `json:"telegram"`
+	// LegacyProxy — ключ "proxy" прежней нотации; непустой — ошибка (coreconfig.LegacyProxyError).
+	LegacyProxy string `json:"proxy"`
 }
 
 // Load читает и проверяет конфиг.
@@ -31,10 +35,10 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// Normalize убирает пробелы по краям.
+// Normalize убирает пробелы по краям и подставляет значения по умолчанию.
 func (c *Config) Normalize() {
 	c.BotToken = strings.TrimSpace(c.BotToken)
-	c.Proxy = strings.TrimSpace(c.Proxy)
+	c.Telegram.Normalize()
 }
 
 // Validate проверяет обязательные поля.
@@ -46,10 +50,9 @@ func (c *Config) Validate() error {
 	if c.AllowedUserID == 0 {
 		errs = append(errs, errors.New("allowed_user_id is required"))
 	}
-	if c.Proxy != "" {
-		if err := coreconfig.ValidateURL(c.Proxy); err != nil {
-			errs = append(errs, fmt.Errorf("proxy: %w", err))
-		}
-	}
+	errs = append(errs,
+		c.Telegram.Validate(SectionTelegram),
+		coreconfig.LegacyProxyError(c.LegacyProxy, SectionTelegram),
+	)
 	return errors.Join(errs...)
 }

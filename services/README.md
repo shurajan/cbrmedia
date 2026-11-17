@@ -46,9 +46,9 @@
 ~/.cbr/
 ├── bin/                 # recorder, tbot, api, converter
 ├── config/
-│   ├── recorder.json    # base_url, proxy (status API), cdn {connection: direct|proxy, proxy}
-│   ├── tbot.json        # bot_token, allowed_user_id, proxy (chmod 600)
-│   ├── api.json         # addr (по умолчанию :8000), status_base_url, proxy — всё необязательно
+│   ├── recorder.json    # base_url, подключения status_api и cdn
+│   ├── tbot.json        # bot_token, allowed_user_id, подключение telegram (chmod 600)
+│   ├── api.json         # addr (по умолчанию :8000), status_base_url, подключение status_api — всё необязательно
 │   └── auth.json        # хэш пароля плеера (api hash-password)
 ├── data/
 │   ├── cbr.db           # общая база (SQLite)
@@ -57,6 +57,32 @@
 ├── media/               # HLS-библиотека плеера (<папка>/playlist.m3u8 + meta.json)
 └── logs/                # <служба>.log, ротация через logrotate
 ```
+
+## Подключения и прокси
+
+У каждого внешнего адресата в конфиге своя секция одной и той же формы (Go `core/config.Connection`):
+
+```json
+"cdn": {
+  "connection": "proxy",
+  "proxy": "http://127.0.0.1:8080"
+}
+```
+
+| Адресат | Секция | Файл |
+|---|---|---|
+| Telegram API | `telegram` | `tbot.json` |
+| status API — опрос статуса и ссылки на стрим | `status_api` | `recorder.json` |
+| CDN — плейлисты, ключи, сегменты | `cdn` | `recorder.json` |
+| status API — ссылка для живого просмотра | `status_api` | `api.json` |
+
+- `connection` — `direct` (по умолчанию, в том числе без секции) или `proxy`.
+- `proxy` — адрес HTTP-прокси; обязателен при `"connection": "proxy"`, при `direct` не используется (адрес можно
+  оставить и переключать только `connection`).
+- Общего прокси нет: секции друг на друга не влияют. Переменные окружения `HTTP(S)_PROXY` не действуют.
+- Ошибка в секции останавливает службу при старте. Так же — непустой ключ `"proxy"` верхнего уровня (нотация до
+  1.4.1): адрес нужно перенести в секцию, которую называет текст ошибки.
+- Выбранное подключение служба пишет в лог при старте.
 
 ## Разработка
 

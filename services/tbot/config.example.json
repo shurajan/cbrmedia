@@ -1,5 +1,8 @@
 {
   "bot_token": "<your-bot-token>",
   "allowed_user_id": 123456789,
-  "proxy": ""
+  "telegram": {
+    "connection": "direct",
+    "proxy": ""
+  }
 }

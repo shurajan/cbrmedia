@@ -1,5 +1,8 @@
 {
   "addr": ":8000",
   "status_base_url": "https://example.com/api/streamcontext",
-  "proxy": ""
+  "status_api": {
+    "connection": "direct",
+    "proxy": ""
+  }
 }

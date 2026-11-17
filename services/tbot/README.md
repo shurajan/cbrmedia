@@ -21,11 +21,15 @@ Telegram-интерфейс управления. Команды меняют с
 {
   "bot_token": "<токен от @BotFather>",
   "allowed_user_id": 123456789,
-  "proxy": ""
+  "telegram": {
+    "connection": "direct",
+    "proxy": ""
+  }
 }
 ```
 
-`proxy` (необязательно) — HTTP-прокси для Telegram API. Шаблон — [config.example.json](config.example.json).
+`telegram` (необязательно) — подключение к Telegram API в единой нотации `{connection: direct|proxy, proxy}`,
+по умолчанию `direct`; правила — в [../README.md](../README.md#подключения-и-прокси). Шаблон — [config.example.json](config.example.json).
 
 ## Запуск
 

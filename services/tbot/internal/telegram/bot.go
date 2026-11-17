@@ -61,7 +61,7 @@ func New(ctx context.Context, cfg *config.Config, db *store.Store, log *slog.Log
 		checkTimeout:  store.FirstCheckTimeout,
 	}
 
-	httpClient, err := newHTTPClient(cfg.Proxy, log)
+	httpClient, err := newHTTPClient(cfg.Telegram.ProxyURL(), log)
 	if err != nil {
 		return nil, err
 	}

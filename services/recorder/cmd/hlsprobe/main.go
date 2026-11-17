@@ -6,10 +6,10 @@
 //
 // Использование:
 //
-//	hlsprobe [-out DIR] [-wait 10m] [-reloads 6 | -duration 5m] [-segments 3] [-nonexistent NAME] [-cdn direct|URL] <user или ссылка>
+//	hlsprobe [-out DIR] [-wait 10m] [-reloads 6 | -duration 5m] [-segments 3] [-nonexistent NAME] [-status-api direct|URL] [-cdn direct|URL] <user или ссылка>
 //
-// base_url, proxy (для status API) и подключение к CDN (секция cdn) берутся из
-// $CBR_HOME/config/recorder.json (как у recorder), флаги -base-url, -proxy и -cdn
+// base_url и подключения к status API и CDN (секции status_api и cdn) берутся из
+// $CBR_HOME/config/recorder.json (как у recorder), флаги -base-url, -status-api и -cdn
 // их переопределяют. Всё сохраняется в DIR:
 // файлы ответов, requests.jsonl (URL, код, заголовки, время каждого запроса)
 // и summary.txt с кратким разбором. Ссылки во всём сохранённом и напечатанном
@@ -46,11 +46,13 @@ func main() {
 }
 
 type options struct {
-	out, baseURL, proxy string
-	cdn                 string // "direct" или адрес прокси для CDN; пусто — из recorder.json
-	nonexistent         string // имя, которого точно нет в status API
-	wait, duration      time.Duration
-	reloads, segments   int
+	out, baseURL string
+	// Подключения к status API и CDN: "direct" или адрес прокси; пусто — из recorder.json.
+	// После resolveConfig — адрес прокси или пусто (напрямую).
+	statusAPI, cdn    string
+	nonexistent       string // имя, которого точно нет в status API
+	wait, duration    time.Duration
+	reloads, segments int
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
@@ -63,7 +65,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	var o options
 	fs.StringVar(&o.out, "out", "", "output dir (default ./hlsprobe-<user>-<time>)")
 	fs.StringVar(&o.baseURL, "base-url", "", "status API base URL (default from recorder.json)")
-	fs.StringVar(&o.proxy, "proxy", "", "HTTP proxy for status API (default from recorder.json)")
+	fs.StringVar(&o.statusAPI, "status-api", "", `status API connection: "direct" or HTTP proxy URL (default from recorder.json status_api section, else direct)`)
 	fs.StringVar(&o.cdn, "cdn", "", `CDN connection: "direct" or HTTP proxy URL (default from recorder.json cdn section, else direct)`)
 	fs.StringVar(&o.nonexistent, "nonexistent", "", "user that surely does not exist (default <user>zz0probe404)")
 	fs.DurationVar(&o.wait, "wait", 0, "if the stream is not live, poll every 15s up to this long")
@@ -98,16 +100,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	quiet := slog.New(slog.DiscardHandler)
-	statusHTTP, err := statusapi.NewHTTPClient(o.proxy, "status API", quiet)
+	statusHTTP, err := statusapi.NewHTTPClient(o.statusAPI, "status API", quiet)
 	if err != nil {
 		log.Error("http client", "err", err)
 		return 1
 	}
-	cdnProxy := o.cdn
-	if cdnProxy == config.ConnectionDirect {
-		cdnProxy = ""
-	}
-	cdnHTTP, err := statusapi.NewHTTPClient(cdnProxy, "CDN", quiet)
+	cdnHTTP, err := statusapi.NewHTTPClient(o.cdn, "CDN", quiet)
 	if err != nil {
 		log.Error("http client", "err", err)
 		return 1
@@ -146,29 +144,43 @@ func resolveConfig(o *options) error {
 			return fmt.Errorf("%w (or pass -base-url)", err)
 		}
 		o.baseURL = cfg.BaseURL
-		if o.proxy == "" {
-			o.proxy = cfg.Proxy
+		if o.statusAPI == "" {
+			o.statusAPI = cfg.StatusAPI.ProxyURL()
 		}
 		if o.cdn == "" {
-			o.cdn = cfg.CDNProxy()
+			o.cdn = cfg.CDN.ProxyURL()
 		}
 	}
-	o.cdn = strings.TrimSpace(o.cdn)
-	if o.cdn != "" && o.cdn != config.ConnectionDirect {
-		if err := coreconfig.ValidateURL(o.cdn); err != nil {
-			return fmt.Errorf("-cdn: %w", err)
-		}
+	var err error
+	if o.statusAPI, err = proxyFromFlag("-status-api", o.statusAPI); err != nil {
+		return err
+	}
+	if o.cdn, err = proxyFromFlag("-cdn", o.cdn); err != nil {
+		return err
 	}
 	o.baseURL = strings.TrimRight(o.baseURL, "/")
 	return nil
 }
 
-// cdnMode — подключение к CDN для summary.txt: адрес прокси не печатается.
-func cdnMode(cdn string) string {
-	if cdn == "" || cdn == config.ConnectionDirect {
-		return config.ConnectionDirect
+// proxyFromFlag разбирает значение флага подключения: "direct" или пусто — напрямую
+// (пустая строка), иначе адрес прокси.
+func proxyFromFlag(flag, value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" || value == coreconfig.ConnectionDirect {
+		return "", nil
 	}
-	return config.ConnectionProxy
+	if err := coreconfig.ValidateURL(value); err != nil {
+		return "", fmt.Errorf("%s: %w", flag, err)
+	}
+	return value, nil
+}
+
+// connMode — способ подключения для summary.txt: адрес прокси не печатается.
+func connMode(proxy string) string {
+	if proxy == "" {
+		return coreconfig.ConnectionDirect
+	}
+	return coreconfig.ConnectionProxy
 }
 
 // rawUser — имя из ввода как есть, без приведения регистра: чтобы проверить,
@@ -314,7 +326,8 @@ func (p *probe) status(ctx context.Context, label, user string) (int, statusInfo
 }
 
 func (p *probe) run(ctx context.Context, o options, user, raw string) {
-	p.logf("hlsprobe %s, user %s (input %q), base_url %s, cdn %s", time.Now().Format(time.RFC3339), user, raw, o.baseURL, cdnMode(o.cdn))
+	p.logf("hlsprobe %s, user %s (input %q), base_url %s, status_api %s, cdn %s",
+		time.Now().Format(time.RFC3339), user, raw, o.baseURL, connMode(o.statusAPI), connMode(o.cdn))
 	p.logf("\n== status API")
 
 	_, info := p.status(ctx, "status", user)

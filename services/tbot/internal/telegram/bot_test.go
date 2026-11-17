@@ -12,12 +12,14 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	coreconfig "cbr/core/config"
 	"cbr/core/store"
 	"cbr/tbot/internal/config"
 )
@@ -102,6 +104,28 @@ func message(fromID int64, text string) *models.Update {
 		From: &models.User{ID: fromID},
 		Chat: models.Chat{ID: fromID},
 	}}
+}
+
+// TestTelegramProxy: запросы к Telegram API идут через прокси из секции "telegram".
+func TestTelegramProxy(t *testing.T) {
+	var host atomic.Value
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host.Store(r.URL.Host)
+		_, _ = io.WriteString(w, `{"ok":true,"result":{"id":1,"is_bot":true,"first_name":"cbr","username":"cbr_bot"}}`)
+	}))
+	defer proxy.Close()
+
+	cfg := &config.Config{
+		BotToken: "123:test", AllowedUserID: ownerID,
+		Telegram: coreconfig.Connection{Connection: coreconfig.ConnectionProxy, Proxy: proxy.URL},
+	}
+	// telegram.invalid не резолвится: getMe при создании бота пройдёт только через прокси.
+	if _, err := New(context.Background(), cfg, nil, discard, bot.WithServerURL("http://telegram.invalid")); err != nil {
+		t.Fatal(err)
+	}
+	if host.Load() != "telegram.invalid" {
+		t.Fatalf("proxy saw host %v", host.Load())
+	}
 }
 
 func TestStrangerIsDenied(t *testing.T) {

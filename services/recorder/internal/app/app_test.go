@@ -111,41 +111,63 @@ func TestRunFollowsWatchlist(t *testing.T) {
 	}
 }
 
-// TestRunCDNConnection: общий proxy действует только на status API, к CDN recorder
-// подключается напрямую или через прокси — по секции "cdn".
-func TestRunCDNConnection(t *testing.T) {
-	for name, tc := range map[string]struct {
-		cdn      string
-		viaProxy bool
-	}{
-		"no cdn section": {cdn: ``, viaProxy: false},
-		"direct":         {cdn: `,"cdn":{"connection":"direct"}`, viaProxy: false},
-		"shared proxy":   {cdn: `,"cdn":{"connection":"proxy"}`, viaProxy: true},
+// TestRunConnections: у status API и CDN свои секции подключения — запросы к одному
+// адресату не уходят через прокси другого и не уходят напрямую, если задан прокси.
+func TestRunConnections(t *testing.T) {
+	const statusHost, cdnHost = "status.invalid", "cdn.invalid" // доступны только через прокси
+	for name, tc := range map[string]struct{ statusProxy, cdnProxy bool }{
+		"status proxy, cdn direct": {statusProxy: true},
+		"status direct, cdn proxy": {cdnProxy: true},
+		"separate proxies":         {statusProxy: true, cdnProxy: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel() // каждый случай ждёт первой проверки (initialDelay)
-			var cdnDirect, cdnProxied atomic.Int32
-			cdn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			var statusDirect, statusProxied, cdnDirect, cdnProxied, stray atomic.Int32
+
+			cdn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				cdnDirect.Add(1)
-				http.NotFound(w, nil)
+				http.NotFound(w, r)
 			}))
 			defer cdn.Close()
+			hlsSource := cdn.URL
+			if tc.cdnProxy {
+				hlsSource = "http://" + cdnHost
+			}
+			room := `{"room_status":"public","hls_source":"` + hlsSource + `/master.m3u8"}`
+			status := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				statusDirect.Add(1)
+				_, _ = io.WriteString(w, room)
+			}))
+			defer status.Close()
 
-			// Прокси: status API доступен только через него (выдуманный хост),
-			// запросы к CDN считает и не пропускает.
-			const statusHost = "status.invalid"
-			proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Host == statusHost {
-					_, _ = io.WriteString(w, `{"room_status":"public","hls_source":"`+cdn.URL+`/master.m3u8"}`)
-					return
+			// Прокси status API и прокси CDN: чужой запрос на любом из них — ошибка.
+			statusProxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Host != statusHost {
+					stray.Add(1)
+				}
+				statusProxied.Add(1)
+				_, _ = io.WriteString(w, room)
+			}))
+			defer statusProxy.Close()
+			cdnProxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Host != cdnHost {
+					stray.Add(1)
 				}
 				cdnProxied.Add(1)
 				http.NotFound(w, r)
 			}))
-			defer proxy.Close()
+			defer cdnProxy.Close()
+
+			cfg := `{"base_url":"` + status.URL + `"`
+			if tc.statusProxy {
+				cfg = `{"base_url":"http://` + statusHost + `","status_api":{"connection":"proxy","proxy":"` + statusProxy.URL + `"}`
+			}
+			if tc.cdnProxy {
+				cfg += `,"cdn":{"connection":"proxy","proxy":"` + cdnProxy.URL + `"}`
+			}
+			cfg += `}`
 
 			layout := parallelLayout(t)
-			cfg := `{"base_url":"http://` + statusHost + `","proxy":"` + proxy.URL + `"` + tc.cdn + `}`
 			if err := os.WriteFile(layout.ConfigFile("recorder"), []byte(cfg), 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -168,11 +190,10 @@ func TestRunCDNConnection(t *testing.T) {
 				t.Fatalf("Run returned %v", err)
 			}
 
-			if tc.viaProxy && (cdnProxied.Load() == 0 || cdnDirect.Load() != 0) {
-				t.Errorf("want CDN via proxy: direct=%d proxied=%d", cdnDirect.Load(), cdnProxied.Load())
-			}
-			if !tc.viaProxy && (cdnDirect.Load() == 0 || cdnProxied.Load() != 0) {
-				t.Errorf("want direct CDN: direct=%d proxied=%d", cdnDirect.Load(), cdnProxied.Load())
+			got := [4]bool{statusDirect.Load() > 0, statusProxied.Load() > 0, cdnDirect.Load() > 0, cdnProxied.Load() > 0}
+			want := [4]bool{!tc.statusProxy, tc.statusProxy, !tc.cdnProxy, tc.cdnProxy}
+			if got != want || stray.Load() != 0 {
+				t.Errorf("[status direct, status proxy, cdn direct, cdn proxy] = %v, want %v; stray = %d", got, want, stray.Load())
 			}
 		})
 	}

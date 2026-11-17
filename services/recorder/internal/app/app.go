@@ -55,13 +55,12 @@ func Run(ctx context.Context, layout home.Layout, opts Options, log *slog.Logger
 	}
 	hls.RecoverPartial(layout.Recordings, log.With("component", "hls"))
 
-	// Отдельные клиенты: общий proxy — только для status API, к CDN своё
-	// подключение из секции "cdn" (по умолчанию прямое).
-	statusHTTP, err := statusapi.NewHTTPClient(cfg.Proxy, "status API", log)
+	// Отдельные клиенты: у status API и CDN свои секции подключения в конфиге.
+	statusHTTP, err := statusapi.NewHTTPClient(cfg.StatusAPI.ProxyURL(), "status API", log)
 	if err != nil {
 		return err
 	}
-	cdnHTTP, err := statusapi.NewHTTPClient(cfg.CDNProxy(), "CDN", log)
+	cdnHTTP, err := statusapi.NewHTTPClient(cfg.CDN.ProxyURL(), "CDN", log)
 	if err != nil {
 		return err
 	}

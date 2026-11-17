@@ -13,6 +13,9 @@ import (
 // Name — имя службы и файла конфига.
 const Name = "api"
 
+// SectionStatusAPI — имя секции подключения в api.json.
+const SectionStatusAPI = "status_api"
+
 // DefaultAddr — адрес HTTP API по умолчанию.
 const DefaultAddr = ":8000"
 
@@ -23,8 +26,10 @@ type Config struct {
 	// StatusBaseURL — базовый адрес status API, как base_url в recorder.json; нужен для
 	// GET /watchlist/:user/live (необязательно: без него живой просмотр выключен).
 	StatusBaseURL string `json:"status_base_url"`
-	// Proxy — HTTP-прокси для запросов к status API (необязательно).
-	Proxy string `json:"proxy"`
+	// StatusAPI — подключение к status API.
+	StatusAPI coreconfig.Connection `json:"status_api"`
+	// LegacyProxy — ключ "proxy" прежней нотации; непустой — ошибка (coreconfig.LegacyProxyError).
+	LegacyProxy string `json:"proxy"`
 }
 
 // Load читает и проверяет конфиг. Если файла нет, используются значения по умолчанию.
@@ -48,7 +53,7 @@ func (c *Config) Normalize() {
 		c.Addr = DefaultAddr
 	}
 	c.StatusBaseURL = strings.TrimRight(strings.TrimSpace(c.StatusBaseURL), "/")
-	c.Proxy = strings.TrimSpace(c.Proxy)
+	c.StatusAPI.Normalize()
 }
 
 // Validate проверяет корректность URL.
@@ -59,10 +64,9 @@ func (c *Config) Validate() error {
 			errs = append(errs, fmt.Errorf("status_base_url: %w", err))
 		}
 	}
-	if c.Proxy != "" {
-		if err := coreconfig.ValidateURL(c.Proxy); err != nil {
-			errs = append(errs, fmt.Errorf("proxy: %w", err))
-		}
-	}
+	errs = append(errs,
+		c.StatusAPI.Validate(SectionStatusAPI),
+		coreconfig.LegacyProxyError(c.LegacyProxy, SectionStatusAPI),
+	)
 	return errors.Join(errs...)
 }

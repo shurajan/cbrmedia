@@ -1,6 +1,9 @@
 {
   "base_url": "https://example.com/api/streamcontext",
-  "proxy": "",
+  "status_api": {
+    "connection": "direct",
+    "proxy": ""
+  },
   "cdn": {
     "connection": "direct",
     "proxy": ""

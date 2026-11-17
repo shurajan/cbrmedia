@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Диагностика status API и CDN по одному пользователю через recorder/cmd/hlsprobe
-# с настройками dev (base_url, proxy и секция cdn из $CBR_HOME/config/recorder.json).
+# с настройками dev (base_url и секции status_api и cdn из $CBR_HOME/config/recorder.json).
 #
 #   services/dev_probe.sh <user или ссылка>     пользователь, который сейчас в эфире (public)
 #   CBR_HOME=~/.cbr services/dev_probe.sh <user> другая служебная папка (по умолчанию ~/cbr-dev)
