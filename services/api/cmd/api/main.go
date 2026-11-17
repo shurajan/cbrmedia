@@ -5,6 +5,8 @@
 //
 //	api [-debug]                        запустить службу (-debug: ещё и лог каждого HTTP-запроса)
 //	api hash-password --password <pwd>  задать пароль плеера (~/.cbr/config/auth.json)
+//	api config [флаги]                  записать ~/.cbr/config/api.json: без флагов спросит все
+//	                                    параметры, с флагами задаст переданные (api config --help)
 //	api -version                        показать версию
 package main
 
@@ -19,6 +21,8 @@ import (
 
 	"cbr/api/internal/app"
 	"cbr/api/internal/auth"
+	"cbr/api/internal/config"
+	"cbr/core/configcli"
 	"cbr/core/home"
 	"cbr/core/svc"
 )
@@ -36,9 +40,21 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == cmdHashPassword {
 		return runHashPassword(args[1:], stdin, stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == configcli.Name {
+		layout, err := home.Resolve()
+		if err != nil {
+			fmt.Fprintln(stderr, "❌", err)
+			return 1
+		}
+		return config.CLI(layout.ConfigFile(config.Name)).Run(args[1:], stdin, stdout, stderr)
+	}
 
 	fs := flag.NewFlagSet("api", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(stderr, "usage: api [-debug] | api config [flags] (see: api config --help) | api hash-password --password <pwd> | api -version")
+		fs.PrintDefaults()
+	}
 	debug := fs.Bool("debug", false, "enable debug logging, including every HTTP request")
 	showVersion := fs.Bool("version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {

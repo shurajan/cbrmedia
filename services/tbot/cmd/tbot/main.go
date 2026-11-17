@@ -4,8 +4,10 @@
 //
 // Использование:
 //
-//	tbot [-debug]   запустить службу
-//	tbot -version   показать версию
+//	tbot [-debug]          запустить службу
+//	tbot config [флаги]    записать ~/.cbr/config/tbot.json: без флагов спросит все
+//	                       параметры, с флагами задаст переданные (tbot config --help)
+//	tbot -version          показать версию
 package main
 
 import (
@@ -14,21 +16,36 @@ import (
 	"io"
 	"os"
 
+	"cbr/core/configcli"
 	"cbr/core/home"
 	"cbr/core/svc"
 	"cbr/tbot/internal/app"
+	"cbr/tbot/internal/config"
 )
 
 // version задаётся при сборке: -ldflags "-X main.version=..."
 var version = "dev"
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
-func run(args []string, stdout, stderr io.Writer) int {
+func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == configcli.Name {
+		layout, err := home.Resolve()
+		if err != nil {
+			fmt.Fprintln(stderr, "❌", err)
+			return 1
+		}
+		return config.CLI(layout.ConfigFile(config.Name)).Run(args[1:], stdin, stdout, stderr)
+	}
+
 	fs := flag.NewFlagSet("tbot", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(stderr, "usage: tbot [-debug] | tbot config [flags] (see: tbot config --help) | tbot -version")
+		fs.PrintDefaults()
+	}
 	debug := fs.Bool("debug", false, "enable debug logging")
 	showVersion := fs.Bool("version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {

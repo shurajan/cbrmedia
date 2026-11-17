@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	coreconfig "cbr/core/config"
+	"cbr/core/configcli"
 )
 
 // Name — имя службы и файла конфига.
@@ -27,7 +28,7 @@ type Config struct {
 	// CDN — подключение к CDN, с которого качаются плейлисты, ключи и сегменты (hls_source).
 	CDN coreconfig.Connection `json:"cdn"`
 	// LegacyProxy — ключ "proxy" прежней нотации; непустой — ошибка (coreconfig.LegacyProxyError).
-	LegacyProxy string `json:"proxy"`
+	LegacyProxy string `json:"proxy,omitempty"`
 }
 
 // Load читает и проверяет конфиг.
@@ -37,6 +38,33 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+// CLI — подкоманда "recorder config", которая пишет конфиг в path.
+func CLI(path string) *configcli.Command {
+	cfg := &Config{}
+	return &configcli.Command{
+		Service: Name,
+		Path:    path,
+		Config:  cfg,
+		Params: []configcli.Param{
+			configcli.URL("base-url", "base_url", "status API base URL; a user is polled at <base_url>/<user>/", true, &cfg.BaseURL),
+			configcli.Connection("status-api", SectionStatusAPI, "connection to the status API", &cfg.StatusAPI),
+			configcli.Connection("cdn", SectionCDN, "connection to the CDN (playlists, keys, segments)", &cfg.CDN),
+		},
+		Migrate: func() []string {
+			if note := coreconfig.MigrateLegacyProxy(&cfg.LegacyProxy, &cfg.StatusAPI, SectionStatusAPI); note != "" {
+				return []string{note}
+			}
+			return nil
+		},
+		Examples: []string{
+			"config",
+			"config --base-url https://example.com/api/streamcontext --status-api http://127.0.0.1:8080 --cdn direct",
+			"config --cdn http://127.0.0.1:8081",
+			"config --status-api direct",
+		},
+	}
 }
 
 // Normalize убирает пробелы по краям и подставляет значения по умолчанию.

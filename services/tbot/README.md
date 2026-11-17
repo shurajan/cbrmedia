@@ -29,7 +29,11 @@ Telegram-интерфейс управления. Команды меняют с
 ```
 
 `telegram` (необязательно) — подключение к Telegram API в единой нотации `{connection: direct|proxy, proxy}`,
-по умолчанию `direct`; правила — в [../README.md](../README.md#подключения-и-прокси). Шаблон — [config.example.json](config.example.json).
+по умолчанию `direct`; правила — в [../README.md](../README.md#подключения-и-прокси).
+
+Задать конфиг — `~/.cbr/bin/tbot config` (спросит все параметры) или с флагами `--bot-token`, `--allowed-user-id`,
+`--telegram`; справка — `tbot config --help`, подробности — в [../README.md](../README.md#настройка-конфигов).
+Шаблон для ручной правки — [config.example.json](config.example.json).
 
 ## Запуск
 

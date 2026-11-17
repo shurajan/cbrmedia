@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	coreconfig "cbr/core/config"
+	"cbr/core/configcli"
 )
 
 // Name — имя службы и файла конфига.
@@ -29,7 +30,7 @@ type Config struct {
 	// StatusAPI — подключение к status API.
 	StatusAPI coreconfig.Connection `json:"status_api"`
 	// LegacyProxy — ключ "proxy" прежней нотации; непустой — ошибка (coreconfig.LegacyProxyError).
-	LegacyProxy string `json:"proxy"`
+	LegacyProxy string `json:"proxy,omitempty"`
 }
 
 // Load читает и проверяет конфиг. Если файла нет, используются значения по умолчанию.
@@ -44,6 +45,33 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+// CLI — подкоманда "api config", которая пишет конфиг в path.
+func CLI(path string) *configcli.Command {
+	cfg := &Config{}
+	return &configcli.Command{
+		Service: Name,
+		Path:    path,
+		Config:  cfg,
+		Params: []configcli.Param{
+			configcli.String("addr", "addr", "<host:port>", "listen address, "+DefaultAddr+" when not set", false, &cfg.Addr),
+			configcli.URL("status-base-url", "status_base_url", "status API base URL, same as base_url of recorder; live streams are off without it", false, &cfg.StatusBaseURL),
+			configcli.Connection("status-api", SectionStatusAPI, "connection to the status API", &cfg.StatusAPI),
+		},
+		Migrate: func() []string {
+			if note := coreconfig.MigrateLegacyProxy(&cfg.LegacyProxy, &cfg.StatusAPI, SectionStatusAPI); note != "" {
+				return []string{note}
+			}
+			return nil
+		},
+		Examples: []string{
+			"config",
+			"config --addr :8000 --status-base-url https://example.com/api/streamcontext",
+			"config --status-api http://127.0.0.1:8080",
+			`config --status-base-url ""`,
+		},
+	}
 }
 
 // Normalize подставляет значения по умолчанию.

@@ -50,19 +50,20 @@ done
 
 # --- проверки --------------------------------------------------------------------
 
-# ensure_config <служба>: без конфига служба не стартует — кладём шаблон.
+# ensure_config <служба>: без конфига служба не стартует — подсказываем, как его задать.
 ensure_config() {
   local cfg="$CBR_HOME/config/$1.json"
   [ -f "$cfg" ] && return 0
-  cp "$SERVICES_DIR/$1/config.example.json" "$cfg" && chmod 600 "$cfg"
-  echo "⚠️  $1: создан шаблон $cfg — заполните его и запустите скрипт снова."
+  echo "⚠️  $1: нет $cfg. Задайте параметры и запустите скрипт снова:"
+  echo "    CBR_HOME=$CBR_HOME $CBR_HOME/bin/$1 config     # спросит все параметры; справка — config --help"
   return 1
 }
 
 # live_hint: api.json необязателен, но без status_base_url не работает GET /watchlist/:user/live.
 live_hint() {
   grep -q '"status_base_url"[[:space:]]*:[[:space:]]*"[^"]' "$CBR_HOME/config/api.json" 2>/dev/null && return 0
-  echo "ℹ️  api: живой просмотр выключен — добавьте в $CBR_HOME/config/api.json \"status_base_url\" (как base_url в recorder.json)."
+  echo "ℹ️  api: живой просмотр выключен — задайте status_base_url (как base_url в recorder.json):"
+  echo "    CBR_HOME=$CBR_HOME $CBR_HOME/bin/api config --status-base-url <адрес>"
 }
 
 # ready <служба>: 0 — службу можно запускать.

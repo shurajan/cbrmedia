@@ -65,6 +65,22 @@ func (c Connection) ProxyURL() string {
 	return c.Proxy
 }
 
+// MigrateLegacyProxy переносит адрес из ключа "proxy" верхнего уровня (нотация до 1.4.1)
+// в секцию c, если прокси в ней не настроен, и очищает старый ключ. Вызывается после
+// Normalize подкомандой "<служба> config"; возвращает заметку для пользователя или пусто.
+func MigrateLegacyProxy(legacy *string, c *Connection, section string) string {
+	addr := strings.TrimSpace(*legacy)
+	*legacy = ""
+	switch {
+	case addr == "":
+		return ""
+	case c.Proxy != "" || c.Connection == ConnectionProxy:
+		return fmt.Sprintf(`old top-level "proxy" is dropped: %q is already configured`, section)
+	}
+	c.Connection, c.Proxy = ConnectionProxy, addr
+	return fmt.Sprintf(`old top-level "proxy" is moved to %q`, section)
+}
+
 // LegacyProxyError — ошибка для ключа "proxy" верхнего уровня (нотация до 1.4.1):
 // молча он действовать перестать не должен, иначе трафик пойдёт напрямую.
 // value — значение старого ключа, section — секция, куда перенести адрес.

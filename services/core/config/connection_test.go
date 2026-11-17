@@ -46,3 +46,24 @@ func TestLegacyProxyError(t *testing.T) {
 		t.Error("expected error for non-empty legacy key")
 	}
 }
+
+func TestMigrateLegacyProxy(t *testing.T) {
+	for name, tc := range map[string]struct {
+		legacy string
+		conn   Connection
+		want   Connection
+		note   bool
+	}{
+		"empty legacy":       {legacy: " ", conn: Connection{Connection: "direct"}, want: Connection{Connection: "direct"}},
+		"moved":              {legacy: " http://a:1 ", conn: Connection{Connection: "direct"}, want: Connection{Connection: "proxy", Proxy: "http://a:1"}, note: true},
+		"section configured": {legacy: "http://a:1", conn: Connection{Connection: "direct", Proxy: "http://b:2"}, want: Connection{Connection: "direct", Proxy: "http://b:2"}, note: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			legacy, conn := tc.legacy, tc.conn
+			note := MigrateLegacyProxy(&legacy, &conn, "cdn")
+			if legacy != "" || conn != tc.want || (note != "") != tc.note {
+				t.Fatalf("legacy = %q, conn = %+v, note = %q", legacy, conn, note)
+			}
+		})
+	}
+}

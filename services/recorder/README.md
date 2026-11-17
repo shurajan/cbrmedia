@@ -109,7 +109,9 @@ HTML-страницы ошибок; хост каждого запроса и е
 [../README.md](../README.md#подключения-и-прокси). Секции независимы: прокси status API на CDN не действует, и наоборот.
 Какое подключение выбрано, recorder пишет в лог при старте (`using proxy` / `using direct connection`, поле `for`).
 
-Шаблон — [config.example.json](config.example.json). Ошибки в конфиге останавливают службу при старте.
+Задать конфиг — `~/.cbr/bin/recorder config` (спросит все параметры) или с флагами `--base-url`, `--status-api`,
+`--cdn`; справка — `recorder config --help`, подробности — в [../README.md](../README.md#настройка-конфигов).
+Шаблон для ручной правки — [config.example.json](config.example.json). Ошибки в конфиге останавливают службу при старте.
 
 ## Запуск
 
@@ -118,4 +120,4 @@ make run                       # локально, данные в $CBR_HOME (п
 services/deploy/install.sh recorder   # на сервере: unit cbr-recorder.service
 ```
 
-Флаги: `-debug`, `-version`.
+Флаги: `-debug`, `-version`; подкоманда `config` — см. выше.

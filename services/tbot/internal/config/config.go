@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	coreconfig "cbr/core/config"
+	"cbr/core/configcli"
 )
 
 // Name — имя службы и файла конфига.
@@ -23,7 +24,7 @@ type Config struct {
 	// Telegram — подключение к Telegram API.
 	Telegram coreconfig.Connection `json:"telegram"`
 	// LegacyProxy — ключ "proxy" прежней нотации; непустой — ошибка (coreconfig.LegacyProxyError).
-	LegacyProxy string `json:"proxy"`
+	LegacyProxy string `json:"proxy,omitempty"`
 }
 
 // Load читает и проверяет конфиг.
@@ -33,6 +34,33 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+// CLI — подкоманда "tbot config", которая пишет конфиг в path.
+func CLI(path string) *configcli.Command {
+	cfg := &Config{}
+	return &configcli.Command{
+		Service: Name,
+		Path:    path,
+		Config:  cfg,
+		Params: []configcli.Param{
+			configcli.Secret("bot-token", "bot_token", "<token>", "bot token from @BotFather", true, &cfg.BotToken),
+			configcli.Int64("allowed-user-id", "allowed_user_id", "<id>", "the only Telegram user allowed to send commands", true, &cfg.AllowedUserID),
+			configcli.Connection("telegram", SectionTelegram, "connection to the Telegram API", &cfg.Telegram),
+		},
+		Migrate: func() []string {
+			if note := coreconfig.MigrateLegacyProxy(&cfg.LegacyProxy, &cfg.Telegram, SectionTelegram); note != "" {
+				return []string{note}
+			}
+			return nil
+		},
+		Examples: []string{
+			"config",
+			"config --bot-token 123456:ABC... --allowed-user-id 123456789",
+			"config --telegram http://127.0.0.1:8080",
+			"config --telegram direct",
+		},
+	}
 }
 
 // Normalize убирает пробелы по краям и подставляет значения по умолчанию.

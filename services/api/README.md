@@ -34,7 +34,9 @@ HTTP API для плеера CBRPlayer: авторизация по паролю
 старте и при каждом входе записывает его целиком из памяти, так что без перезапуска вход старым паролем
 вернёт в файл старый хэш.
 
-`~/.cbr/config/api.json` необязателен (шаблон — `config.example.json`):
+`~/.cbr/config/api.json` необязателен. Задать его — `~/.cbr/bin/api config` (спросит все параметры) или с флагами
+`--addr`, `--status-base-url`, `--status-api`; справка — `api config --help`, подробности — в
+[../README.md](../README.md#настройка-конфигов). Шаблон для ручной правки — `config.example.json`. Параметры:
 
 - `addr` — адрес, по умолчанию `:8000`;
 - `status_base_url` — базовый адрес status API, тот же, что `base_url` в `recorder.json`; без него

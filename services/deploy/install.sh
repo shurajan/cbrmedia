@@ -74,19 +74,21 @@ fi
 
 # --- проверки перед установкой ---------------------------------------------------
 
-# ensure_config <служба>: без конфига служба не стартует — кладём шаблон и пропускаем её.
+# ensure_config <служба>: без конфига служба не стартует — бинарник ставим (им конфиг и задаётся),
+# службу не запускаем.
 ensure_config() {
   local svc="$1" cfg="$CBR_HOME/config/$1.json"
   [ -f "$cfg" ] && return 0
-  cp "$SERVICES_DIR/$svc/config.example.json" "$cfg" && chmod 600 "$cfg"
-  echo "⚠️  $svc: создан шаблон $cfg — заполните его и запустите скрипт снова."
-  return 1
+  echo "⚠️  $svc: нет $cfg. После установки задайте параметры и запустите скрипт снова:"
+  echo "    CBR_HOME=$CBR_HOME $CBR_HOME/bin/$svc config     # спросит все параметры; справка — config --help"
+  NEED_CONFIG=1
 }
 
 # live_hint: api.json необязателен, но без status_base_url не работает GET /watchlist/:user/live.
 live_hint() {
   grep -q '"status_base_url"[[:space:]]*:[[:space:]]*"[^"]' "$CBR_HOME/config/api.json" 2>/dev/null && return 0
-  echo "ℹ️  api: живой просмотр выключен — добавьте в $CBR_HOME/config/api.json \"status_base_url\" (как base_url в recorder.json)."
+  echo "ℹ️  api: живой просмотр выключен — задайте status_base_url (как base_url в recorder.json):"
+  echo "    CBR_HOME=$CBR_HOME $CBR_HOME/bin/api config --status-base-url <адрес>"
 }
 
 # preflight <служба>: 0 — можно ставить; заодно задаёт EXEC_ARGS и UNIT_EXTRA.
@@ -122,6 +124,7 @@ install_service() {
   local bin="$CBR_HOME/bin/$svc" unit="cbr-$svc.service"
   local unit_file="/etc/systemd/system/$unit" build_output
   NEED_AUTH=""
+  NEED_CONFIG=""
 
   echo
   echo "=== $svc ==="
@@ -138,8 +141,8 @@ install_service() {
   install -m 0755 "$build_output" "$bin" || { echo "❌ не удалось установить $bin"; return 1; }
   rm -f "$build_output"
 
-  # api без пароля не стартует: бинарник поставлен, чтобы им можно было задать пароль.
-  [ -n "$NEED_AUTH" ] && return 1
+  # Без пароля (api) или конфига служба не стартует: бинарник поставлен, чтобы ими их можно было задать.
+  [ -n "$NEED_AUTH$NEED_CONFIG" ] && return 1
 
   # Unit-файл перезаписывается при каждом деплое, чтобы изменения в нём применялись.
   sudo tee "$unit_file" >/dev/null <<EOF || { echo "❌ не удалось записать $unit_file"; return 1; }
