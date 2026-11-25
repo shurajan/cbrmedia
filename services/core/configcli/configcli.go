@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	coreconfig "cbr/core/config"
+	"cbr/core/netdial"
 )
 
 // Name — имя подкоманды у бинарников служб.
@@ -301,11 +302,13 @@ Settings:
 		fmt.Fprintf(stdout, "  --%s %s\n      %s: %s%s\n", p.Flag, p.Value, p.Key, p.Usage, requiredMark(p))
 	}
 	fmt.Fprintf(stdout, `
-A connection setting takes %q, an HTTP proxy URL, or %q to switch back to the
-proxy address saved in the file. An empty flag value (--flag "") clears an optional setting.
+A connection setting takes %q (the OS default route), an HTTP proxy URL
+(http://127.0.0.1:8080) or a network interface name (eth0, wg0; Linux and macOS only).
+%q or %q switches back to the proxy address or interface saved in the file.
+An empty flag value (--flag "") clears an optional setting.
 The config is checked before saving; an invalid one is not written.
 Restart the service after changing its config.
-`, coreconfig.ConnectionDirect, coreconfig.ConnectionProxy)
+`, coreconfig.ConnectionDirect, coreconfig.ConnectionProxy, coreconfig.ConnectionInterface)
 	if len(c.Examples) > 0 {
 		fmt.Fprintln(stdout, "\nExamples:")
 		for _, example := range c.Examples {
@@ -372,36 +375,26 @@ func Int64(flagName, key, value, usage string, required bool, target *int64) Par
 	}
 }
 
-// Connection — секция подключения (coreconfig.Connection) одним значением:
-// "direct", адрес HTTP-прокси или "proxy" — снова включить сохранённый адрес.
-// "direct" адрес в файле не стирает; пустое значение стирает и ставит direct.
+// Connection — секция подключения (coreconfig.Connection) одним значением: "direct",
+// адрес HTTP-прокси, имя сетевого интерфейса, "proxy" или "interface" — снова включить
+// сохранённое (coreconfig.Connection.SetValue). Интерфейс должен быть в системе:
+// команда выполняется на той же машине, что и служба.
 func Connection(flagName, key, usage string, target *coreconfig.Connection) Param {
 	return Param{
 		Flag: flagName, Key: key, Usage: usage,
-		Value: coreconfig.ConnectionDirect + "|" + coreconfig.ConnectionProxy + "|<proxy url>",
-		Get: func() string {
-			if target.Connection == coreconfig.ConnectionProxy && target.Proxy != "" {
-				return target.Proxy
-			}
-			return coreconfig.ConnectionDirect
-		},
+		Value: coreconfig.ConnectionDirect + "|<proxy url>|<interface>",
+		Get:   func() string { return target.Value() },
 		Set: func(v string) error {
-			switch strings.ToLower(v) {
-			case "":
-				*target = coreconfig.Connection{Connection: coreconfig.ConnectionDirect}
-			case coreconfig.ConnectionDirect:
-				target.Connection = coreconfig.ConnectionDirect
-			case coreconfig.ConnectionProxy:
-				if target.Proxy == "" {
-					return errors.New("no proxy address is saved yet: pass the proxy URL")
-				}
-				target.Connection = coreconfig.ConnectionProxy
-			default:
-				if err := coreconfig.ValidateURL(v); err != nil {
-					return fmt.Errorf("want %q or a proxy URL: %w", coreconfig.ConnectionDirect, err)
-				}
-				*target = coreconfig.Connection{Connection: coreconfig.ConnectionProxy, Proxy: v}
+			next := *target
+			if err := next.SetValue(v); err != nil {
+				return err
 			}
+			if iface := next.InterfaceName(); iface != "" {
+				if err := netdial.CheckInterface(iface); err != nil {
+					return err
+				}
+			}
+			*target = next
 			return nil
 		},
 	}

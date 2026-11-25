@@ -8,8 +8,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
-	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -17,7 +17,9 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	coreconfig "cbr/core/config"
 	"cbr/core/ctxutil"
+	"cbr/core/netdial"
 	"cbr/core/store"
 	"cbr/tbot/internal/config"
 )
@@ -61,7 +63,7 @@ func New(ctx context.Context, cfg *config.Config, db *store.Store, log *slog.Log
 		checkTimeout:  store.FirstCheckTimeout,
 	}
 
-	httpClient, err := newHTTPClient(cfg.Telegram.ProxyURL(), log)
+	httpClient, err := newHTTPClient(cfg.Telegram, log)
 	if err != nil {
 		return nil, err
 	}
@@ -94,17 +96,20 @@ func New(ctx context.Context, cfg *config.Config, db *store.Store, log *slog.Log
 	return b, nil
 }
 
-func newHTTPClient(proxy string, log *slog.Logger) (*http.Client, error) {
+// newHTTPClient — клиент Telegram API с подключением conn: напрямую, через прокси
+// или через сетевой интерфейс (core/netdial).
+func newHTTPClient(conn coreconfig.Connection, log *slog.Logger) (*http.Client, error) {
 	transport := &http.Transport{}
-	if proxy != "" {
-		proxyURL, err := url.Parse(proxy)
-		if err != nil {
-			return nil, fmt.Errorf("invalid telegram proxy %q: %w", proxy, err)
-		}
-		transport.Proxy = http.ProxyURL(proxyURL)
-		log.Info("telegram proxy enabled", "proxy", proxy)
-	} else {
-		log.Info("telegram proxy not configured, using direct connection")
+	if err := netdial.Configure(transport, &net.Dialer{}, conn); err != nil {
+		return nil, fmt.Errorf("telegram connection: %w", err)
+	}
+	switch kind, target := netdial.Describe(conn); kind {
+	case coreconfig.ConnectionProxy:
+		log.Info("using proxy", "for", "Telegram API", "proxy", target)
+	case coreconfig.ConnectionInterface:
+		log.Info("using network interface", "for", "Telegram API", "interface", target)
+	default:
+		log.Info("using direct connection", "for", "Telegram API")
 	}
 	return &http.Client{Timeout: time.Minute, Transport: transport}, nil
 }

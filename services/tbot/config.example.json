@@ -3,6 +3,7 @@
   "allowed_user_id": 123456789,
   "telegram": {
     "connection": "direct",
-    "proxy": ""
+    "proxy": "",
+    "interface": ""
   }
 }

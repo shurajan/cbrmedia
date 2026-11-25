@@ -3,6 +3,7 @@
   "status_base_url": "https://example.com/api/streamcontext",
   "status_api": {
     "connection": "direct",
-    "proxy": ""
+    "proxy": "",
+    "interface": ""
   }
 }

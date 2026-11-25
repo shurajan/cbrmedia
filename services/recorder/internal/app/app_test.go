@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"cbr/core/home"
+	"cbr/core/netdial"
 	"cbr/core/store"
 )
 
@@ -115,13 +116,19 @@ func TestRunFollowsWatchlist(t *testing.T) {
 // адресату не уходят через прокси другого и не уходят напрямую, если задан прокси.
 func TestRunConnections(t *testing.T) {
 	const statusHost, cdnHost = "status.invalid", "cdn.invalid" // доступны только через прокси
-	for name, tc := range map[string]struct{ statusProxy, cdnProxy bool }{
+	loopback := netdial.LoopbackInterface()
+	for name, tc := range map[string]struct{ statusProxy, cdnProxy, iface bool }{
 		"status proxy, cdn direct": {statusProxy: true},
 		"status direct, cdn proxy": {cdnProxy: true},
 		"separate proxies":         {statusProxy: true, cdnProxy: true},
+		// Оба адресата через сетевой интерфейс: локальные серверы достижимы через loopback.
+		"interfaces": {iface: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel() // каждый случай ждёт первой проверки (initialDelay)
+			if tc.iface && loopback == "" {
+				t.Skip("no loopback interface")
+			}
 			var statusDirect, statusProxied, cdnDirect, cdnProxied, stray atomic.Int32
 
 			cdn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -164,6 +171,10 @@ func TestRunConnections(t *testing.T) {
 			}
 			if tc.cdnProxy {
 				cfg += `,"cdn":{"connection":"proxy","proxy":"` + cdnProxy.URL + `"}`
+			}
+			if tc.iface {
+				section := `{"connection":"interface","interface":"` + loopback + `"}`
+				cfg += `,"status_api":` + section + `,"cdn":` + section
 			}
 			cfg += `}`
 

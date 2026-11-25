@@ -70,9 +70,9 @@ bin/hlsprobe [-wait 30m] [-reloads 6] [-segments 3] [-out DIR] <user или сс
 4 сегмента) и кладёт результат в корень репозитория.
 
 `base_url` и подключения к status API и CDN (секции `status_api` и `cdn`) берёт из `recorder.json` (флаги `-base-url`,
-`-status-api direct|<адрес прокси>` и `-cdn direct|<адрес прокси>` переопределяют; с `-base-url` конфиг не читается,
-подключения без флагов — напрямую). В `summary.txt` пишется только способ подключения (`direct`/`proxy`), адрес
-прокси — нет. Запрашивает статус
+`-status-api` и `-cdn` со значением `direct`, адресом прокси или именем интерфейса переопределяют; с `-base-url`
+конфиг не читается, подключения без флагов — напрямую). В `summary.txt` пишется только способ подключения
+(`direct`/`proxy`/`interface`), без адреса прокси и имени интерфейса. Запрашивает статус
 пользователя (как есть, в исходном регистре, в верхнем и заведомо несуществующего — чтобы увидеть коды ответов),
 master- и все media-плейлисты, `-reloads` раз (или в течение `-duration`) перезагружает лучший вариант (видно, меняются ли токены в URL
 сегментов и как растёт `MEDIA-SEQUENCE`), скачивает ключи, init и последние `-segments` сегментов, затем свежий
@@ -91,11 +91,13 @@ HTML-страницы ошибок; хост каждого запроса и е
   "base_url": "https://example.com/api/streamcontext",
   "status_api": {
     "connection": "proxy",
-    "proxy": "http://127.0.0.1:8080"
+    "proxy": "http://127.0.0.1:8080",
+    "interface": ""
   },
   "cdn": {
-    "connection": "direct",
-    "proxy": ""
+    "connection": "interface",
+    "proxy": "",
+    "interface": "wg0"
   }
 }
 ```
@@ -105,9 +107,10 @@ HTML-страницы ошибок; хост каждого запроса и е
 - `status_api` (необязательно) — подключение к status API (опрос статуса и ссылки на стрим).
 - `cdn` (необязательно) — подключение к CDN, с которого качаются плейлисты, ключи и сегменты (`hls_source`).
 
-Обе секции — в единой нотации `{connection: direct|proxy, proxy}`, по умолчанию `direct`; правила — в
-[../README.md](../README.md#подключения-и-прокси). Секции независимы: прокси status API на CDN не действует, и наоборот.
-Какое подключение выбрано, recorder пишет в лог при старте (`using proxy` / `using direct connection`, поле `for`).
+Обе секции — в единой нотации `{connection: direct|proxy|interface, proxy, interface}` (напрямую, через HTTP-прокси или через
+сетевой интерфейс), по умолчанию `direct`; правила — в
+[../README.md](../README.md#подключения-и-прокси). Секции независимы: подключение status API на CDN не действует, и наоборот.
+Какое подключение выбрано, recorder пишет в лог при старте (`using proxy` / `using network interface` / `using direct connection`, поле `for`).
 
 Задать конфиг — `~/.cbr/bin/recorder config` (спросит все параметры) или с флагами `--base-url`, `--status-api`,
 `--cdn`; справка — `recorder config --help`, подробности — в [../README.md](../README.md#настройка-конфигов).

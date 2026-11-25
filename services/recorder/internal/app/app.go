@@ -56,11 +56,11 @@ func Run(ctx context.Context, layout home.Layout, opts Options, log *slog.Logger
 	hls.RecoverPartial(layout.Recordings, log.With("component", "hls"))
 
 	// Отдельные клиенты: у status API и CDN свои секции подключения в конфиге.
-	statusHTTP, err := statusapi.NewHTTPClient(cfg.StatusAPI.ProxyURL(), "status API", log)
+	statusHTTP, err := statusapi.NewHTTPClient(cfg.StatusAPI, "status API", log)
 	if err != nil {
 		return err
 	}
-	cdnHTTP, err := statusapi.NewHTTPClient(cfg.CDN.ProxyURL(), "CDN", log)
+	cdnHTTP, err := statusapi.NewHTTPClient(cfg.CDN, "CDN", log)
 	if err != nil {
 		return err
 	}

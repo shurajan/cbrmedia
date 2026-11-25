@@ -23,12 +23,14 @@ Telegram-интерфейс управления. Команды меняют с
   "allowed_user_id": 123456789,
   "telegram": {
     "connection": "direct",
-    "proxy": ""
+    "proxy": "",
+    "interface": ""
   }
 }
 ```
 
-`telegram` (необязательно) — подключение к Telegram API в единой нотации `{connection: direct|proxy, proxy}`,
+`telegram` (необязательно) — подключение к Telegram API в единой нотации `{connection: direct|proxy|interface, proxy, interface}`
+(напрямую, через HTTP-прокси или через сетевой интерфейс),
 по умолчанию `direct`; правила — в [../README.md](../README.md#подключения-и-прокси).
 
 Задать конфиг — `~/.cbr/bin/tbot config` (спросит все параметры) или с флагами `--bot-token`, `--allowed-user-id`,

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	coreconfig "cbr/core/config"
 )
 
 var discard = slog.New(slog.DiscardHandler)
@@ -49,12 +51,17 @@ func TestStatusClientFetch(t *testing.T) {
 	}
 }
 
-func TestNewHTTPClientRejectsBadProxy(t *testing.T) {
-	if _, err := NewHTTPClient("http://[::1", "test", discard); err == nil {
-		t.Error("expected error for invalid proxy")
+func TestNewHTTPClientRejectsBadConnection(t *testing.T) {
+	for name, conn := range map[string]coreconfig.Connection{
+		"bad proxy":         {Connection: coreconfig.ConnectionProxy, Proxy: "http://[::1"},
+		"missing interface": {Connection: coreconfig.ConnectionInterface, Interface: "nosuchif0"},
+	} {
+		if _, err := NewHTTPClient(conn, "test", discard); err == nil {
+			t.Errorf("%s: expected error", name)
+		}
 	}
-	if _, err := NewHTTPClient("", "test", discard); err != nil {
-		t.Errorf("no proxy: %v", err)
+	if _, err := NewHTTPClient(coreconfig.Connection{}, "test", discard); err != nil {
+		t.Errorf("direct: %v", err)
 	}
 }
 

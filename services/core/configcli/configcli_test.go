@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	coreconfig "cbr/core/config"
+	"cbr/core/netdial"
 )
 
 // testConfig — конфиг с параметрами всех видов.
@@ -184,30 +185,28 @@ func TestHelp(t *testing.T) {
 	}
 }
 
+// TestConnectionParam: разбор значения — coreconfig.Connection.SetValue; здесь —
+// что интерфейс должен существовать и что неудачный ответ секцию не меняет.
 func TestConnectionParam(t *testing.T) {
-	var c coreconfig.Connection
-	c.Normalize()
+	c := coreconfig.Connection{Connection: coreconfig.ConnectionProxy, Proxy: "http://a:1"}
 	p := Connection("cdn", "cdn", "", &c)
-	steps := []struct {
-		set     string
-		wantErr bool
-		get     string
-		want    coreconfig.Connection
-	}{
-		{set: "proxy", wantErr: true, get: "direct", want: coreconfig.Connection{Connection: "direct"}},
-		{set: "nope", wantErr: true, get: "direct", want: coreconfig.Connection{Connection: "direct"}},
-		{set: "http://a:1", get: "http://a:1", want: coreconfig.Connection{Connection: "proxy", Proxy: "http://a:1"}},
-		{set: "Direct", get: "direct", want: coreconfig.Connection{Connection: "direct", Proxy: "http://a:1"}},
-		{set: "proxy", get: "http://a:1", want: coreconfig.Connection{Connection: "proxy", Proxy: "http://a:1"}},
-		{set: "", get: "direct", want: coreconfig.Connection{Connection: "direct"}},
+	for _, bad := range []string{"nosuchif0", "http://", "interface"} {
+		if err := p.Set(bad); err == nil {
+			t.Fatalf("Set(%q): expected error", bad)
+		}
+		if p.Get() != "http://a:1" {
+			t.Fatalf("Set(%q) changed the section: %+v", bad, c)
+		}
 	}
-	for i, s := range steps {
-		if err := p.Set(s.set); (err != nil) != s.wantErr {
-			t.Fatalf("step %d: Set(%q) = %v", i, s.set, err)
-		}
-		if c != s.want || p.Get() != s.get {
-			t.Fatalf("step %d: after Set(%q): %+v, Get = %q", i, s.set, c, p.Get())
-		}
+	loopback := netdial.LoopbackInterface()
+	if loopback == "" {
+		t.Skip("no loopback interface")
+	}
+	if err := p.Set(loopback); err != nil {
+		t.Fatal(err)
+	}
+	if p.Get() != loopback || c.InterfaceName() != loopback || c.Proxy != "http://a:1" {
+		t.Fatalf("section = %+v", c)
 	}
 }
 
